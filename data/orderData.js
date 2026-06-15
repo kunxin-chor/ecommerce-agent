@@ -49,6 +49,13 @@ async function updateOrderSessionId(orderId, sessionId) {
     )
 }
 
+async function updateOrderStatus(orderId, newStatus) {
+    await pool.execute(
+        "UPDATE orders SET status = ? WHERE id = ?",
+        [newStatus, orderId]
+    );
+}
+
 module.exports = {
-    getOrdersByUserId, createOrder, updateOrderSessionId
+    getOrdersByUserId, createOrder, updateOrderSessionId, updateOrderStatus
 }

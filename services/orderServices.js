@@ -8,6 +8,10 @@ async function updateOrderSessionId(orderId, sessionId) {
     await orderData.updateOrderSessionId(orderId, sessionId);
 }
 
+async function updateOrderStatus(orderId, newStatus) {
+    await orderData.updateOrderStatus(orderId, newStatus);
+}
+
 module.exports = {
-    createOrder, updateOrderSessionId
+    createOrder, updateOrderSessionId, updateOrderStatus
 }
