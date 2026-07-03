@@ -1,4 +1,5 @@
-<%- include('../partials/header', { title: 'New Product', admin }) %>
+<%- contentFor('title') %>New Product
+<%- contentFor('body') %>
 <h1 class="mb-3">New Product</h1>
 <form method="post" action="/admin/products" enctype="multipart/form-data">
   <div class="row g-3">
@@ -56,4 +57,4 @@
     <a class="btn btn-secondary" href="/admin/products">Cancel</a>
   </div>
 </form>
-<%- include('../partials/footer') %>
+
