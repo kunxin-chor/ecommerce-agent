@@ -10,13 +10,13 @@ INSERT INTO categories (name) VALUES
 ('Sleep Support');
 
 -- Products (with category_id)
-INSERT INTO products (category_id, name, price, imageUrl, description, stock) VALUES
-(1, 'Complete Multivitamin for Adults', 29.99, 'https://picsum.photos/id/20/300/200', 'Daily multivitamin with 25+ vitamins and minerals for overall health and wellness', 150),
-(2, 'Whey Protein Isolate Powder', 49.99, 'https://picsum.photos/id/1/300/200', 'High-quality protein powder for muscle building and post-workout recovery', 100),
-(3, 'Omega-3 Fish Oil Softgels', 24.99, 'https://picsum.photos/id/26/300/200', 'Heart-healthy omega-3 fatty acids EPA and DHA for cardiovascular support', 200),
-(4, 'Vitamin D3 + K2 Capsules', 19.99, 'https://picsum.photos/id/96/300/200', 'Essential vitamins for bone health and immune system support', 180),
-(5, 'Probiotic Gut Health Complex', 34.99, 'https://picsum.photos/id/101/300/200', '50 billion CFU probiotic blend for digestive health and immunity', 120),
-(6, 'Melatonin Sleep Support Tablets', 14.99, 'https://picsum.photos/id/102/300/200', 'Natural sleep aid to help regulate sleep cycle and improve rest quality', 250);
+INSERT INTO products (category_id, name, brand, price, imageUrl, description, stock) VALUES
+(1, 'Nature Made Multi for Him', 'Nature Made', 29.99, 'https://www.naturemade.com/cdn/shop/files/NM1789PK001929MULTIFORHIM_5A007225ccfront_1500x.png?v=1756999774', 'Daily multivitamin with 25+ vitamins and minerals for overall health and wellness', 150),
+(2, 'Gold Standard 100% Whey Protein', 'Optimum Nutrition', 49.99, 'https://www.optimumnutrition.com/cdn/shop/files/US_GSW_5LB_FrenchVanCr_FOP.png?v=1781190678&width=1400', 'High-quality protein powder for muscle building and post-workout recovery', 100),
+(3, 'Nature Made Fish Oil 1200mg', 'Nature Made', 24.99, 'https://www.naturemade.com/cdn/shop/files/NM1328PK000745FISHOIL_5A009400ccfront_1500x.png?v=1695678265', 'Heart-healthy omega-3 fatty acids EPA and DHA for cardiovascular support', 200),
+(4, 'Sports Research Vitamin D3 K2', 'Sports Research', 19.99, 'https://www.sportsresearch.com/_next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2F1813%2F6377%2Ffiles%2Fsr_web_render_fg218_d3_k2_front_medium_8bf76316-42d5-493f-ab5e-5aadfb7cc797.png%3Fv%3D1778270249&w=1920&q=75', 'Essential vitamins for bone health and immune system support', 180),
+(5, 'Culturelle Daily Probiotic', 'Culturelle', 34.99, 'https://culturelle.com/cdn/shop/files/cul-DDH-50-display.webp?crop=center&height=1200&v=1778762170&width=1200', '50 billion CFU probiotic blend for digestive health and immunity', 120),
+(6, 'Natrol Melatonin 5mg', 'Natrol', 14.99, 'https://www.natrol.com/cdn/shop/files/4837.931_Melatonin_5mg_TR_100ct_150ccLabel_Front_DS.png?v=1745966369&width=700', 'Natural sleep aid to help regulate sleep cycle and improve rest quality', 250);
 
 -- Tags
 INSERT INTO tags (name) VALUES
@@ -43,10 +43,10 @@ INSERT INTO product_tags (product_id, tag_id) VALUES
 (6, 11), (6, 12);      -- Melatonin: sleep, melatonin
 
 INSERT INTO users (name, email, password, salutation, country, role) VALUES
-('Admin User', 'admin@example.com', '$2b$10$XZjZxZjZxZjZxZjZxZjZxZeXZjZxZjZxZjZxZjZxZjZxZjZxZjZxZjZ', 'Mr', 'USA', 'admin'),
-('John Doe', 'john@example.com', '$2b$10$XZjZxZjZxZjZxZjZxZjZxZeXZjZxZjZxZjZxZjZxZjZxZjZxZjZxZjZ', 'Mr', 'USA', 'user'),
-('Jane Smith', 'jane@example.com', '$2b$10$XZjZxZjZxZjZxZjZxZjZxZeXZjZxZjZxZjZxZjZxZjZxZjZxZjZxZjZ', 'Ms', 'UK', 'user'),
-('Bob Johnson', 'bob@example.com', '$2b$10$XZjZxZjZxZjZxZjZxZjZxZeXZjZxZjZxZjZxZjZxZjZxZjZxZjZxZjZ', 'Mr', 'Canada', 'user');
+('Admin User', 'admin@example.com', '$2b$10$wfKRyY4X//rui5Zye9wRGeJPaQg2WUu/FMSzvudlEXx9Rd.rsJv66', 'Mr', 'USA', 'admin'),  -- password: admin123
+('John Doe', 'john@example.com', '$2b$10$RyoQaDS.vDwi7IPiW6TitO9m3qZft/hlvfAhdnk/IStkSmYzwGJlO', 'Mr', 'USA', 'user'),      -- password: user123
+('Jane Smith', 'jane@example.com', '$2b$10$RyoQaDS.vDwi7IPiW6TitO9m3qZft/hlvfAhdnk/IStkSmYzwGJlO', 'Ms', 'UK', 'user'),     -- password: user123
+('Bob Johnson', 'bob@example.com', '$2b$10$RyoQaDS.vDwi7IPiW6TitO9m3qZft/hlvfAhdnk/IStkSmYzwGJlO', 'Mr', 'Canada', 'user'); -- password: user123
 
 INSERT INTO marketing_preferences (id, preference) VALUES
 (1, 'Email Marketing'),
