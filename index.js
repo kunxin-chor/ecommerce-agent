@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const expressLayouts = require('express-ejs-layouts');
 require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
@@ -13,6 +14,8 @@ const app = express();
 app.use(cors());
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'admin', 'views'));
+app.use(expressLayouts);
+app.set('layout', 'partials/layout');
 app.use(express.urlencoded({ extended: true }));
 // static assets
 app.use(express.static(path.join(__dirname, 'public')));
