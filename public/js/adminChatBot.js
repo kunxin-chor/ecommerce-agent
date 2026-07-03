@@ -47,12 +47,8 @@
     chatInstance.messageAddNew(msg, 'me', 'right', 'user');
 
     try {
-      const res = await fetch('/admin/chat/api', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg })
-      });
-      const data = await res.json();
+      const res = await axios.post('/admin/chat/api', { message: msg });
+      const data = res.data;
 
       const replyText = (data && data.reply) || '(no reply)';
 
