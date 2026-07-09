@@ -101,7 +101,15 @@
   if (Array.isArray(initialHistory) && initialHistory.length) {
     initialHistory.forEach(function (item) {
       if (!item.text) return;
-      chat.messageAddNew(item.text, item.role, item.side, item.role);
+      const msgId = chat.messageAddNew(item.text, item.role, item.side, item.role);
+
+      // Re-render any chart stored with this message
+      if (item.chart && msgId != null) {
+        const msgNode = chat.messageGetDOMObject(msgId);
+        if (msgNode) {
+          renderApexChart(msgNode, item.chart);
+        }
+      }
     });
   }
 

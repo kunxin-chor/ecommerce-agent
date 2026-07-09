@@ -40,11 +40,6 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
   const text = (message || '').toString().trim();
   if (!text) return res.json({ reply: 'Please type something.' });
   const reply = `You said: ${text}`;
-  const session = sessions.find(s => s.id === parseInt(sessionId));
-  if (session) {
-    session.history.push({ text, role: 'me', side: 'right' });
-    session.history.push({ text: reply, role: 'bot', side: 'left' });
-  }
   // Simple demo ApexCharts bar chart configuration
   const chart = {
     chart: { type: 'bar', height: 250 },
@@ -58,6 +53,12 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
       categories: ['Q1', 'Q2', 'Q3', 'Q4']
     }
   };
+
+  const session = sessions.find(s => s.id === parseInt(sessionId));
+  if (session) {
+    session.history.push({ text, role: 'me', side: 'right' });
+    session.history.push({ text: reply, role: 'bot', side: 'left', chart });
+  }
 
   res.json({ reply, chart });
 });
