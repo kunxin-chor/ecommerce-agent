@@ -1,10 +1,6 @@
 const express = require('express');
 const router = express.Router();
-
-function ensureAdmin(req, res, next) {
-  if (req.session && req.session.admin) return next();
-  return res.redirect('/admin/login');
-}
+const { ensureAdmin } = require('../middleware/auth');
 
 // In-memory messages for demo; replace with DB if you want persistence
 const history = [
