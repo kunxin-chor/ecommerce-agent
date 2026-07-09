@@ -2,26 +2,49 @@ const express = require('express');
 // new imports here
 const router = express.Router();
 
-const {ensureAdmin} = require('../middleware/auth');
+const ensureAdmin = require('../middlewares/ensureAdmin');
 
-// In-memory messages for demo; replace with DB if you want persistence
+// In-memory sessions for demo; replace with DB if you want persistence
 // Remove this when you have a database
-const history = [
-  { text: 'Hello! How can I help?', time: new Date(), userName: 'Assistant', userAbbr: 'A' }
-];
+let nextSessionId = 1;
+const sessions = []; // { id, title, history: [{ text, role, side }] }
 
 router.get('/', ensureAdmin, (req, res) => {
-  res.render('chat', { admin: req.session.admin, history });
+  const activeSessionId = req.query.session ? parseInt(req.query.session) : null;
+  const activeSession = sessions.find(s => s.id === activeSessionId);
+  res.render('chat', {
+    admin: req.session.admin,
+    sessions,
+    activeSessionId,
+    history: activeSession ? activeSession.history : []
+  });
+});
+
+// Create a new mock chat session
+router.post('/sessions', ensureAdmin, (req, res) => {
+  const session = { id: nextSessionId++, title: `Chat ${nextSessionId - 1}`, history: [] };
+  sessions.push(session);
+  res.json({ sessionId: session.id });
+});
+
+// Delete a mock chat session
+router.post('/sessions/:id/delete', ensureAdmin, (req, res) => {
+  const index = sessions.findIndex(s => s.id === parseInt(req.params.id));
+  if (index !== -1) sessions.splice(index, 1);
+  res.json({ ok: true });
 });
 
 // Simple demo API that echoes back
 router.post('/api', ensureAdmin, express.json(), async (req, res) => {
-  const { message } = req.body || {};
+  const { message, sessionId } = req.body || {};
   const text = (message || '').toString().trim();
   if (!text) return res.json({ reply: 'Please type something.' });
   const reply = `You said: ${text}`;
-  history.push({ text, time: new Date(), userName: req.session.admin.name || 'You', userAbbr: 'Y' });
-  history.push({ text: reply, time: new Date(), userName: 'Assistant', userAbbr: 'A' });
+  const session = sessions.find(s => s.id === parseInt(sessionId));
+  if (session) {
+    session.history.push({ text, role: 'me', side: 'right' });
+    session.history.push({ text: reply, role: 'bot', side: 'left' });
+  }
   // Simple demo ApexCharts bar chart configuration
   const chart = {
     chart: { type: 'bar', height: 250 },
