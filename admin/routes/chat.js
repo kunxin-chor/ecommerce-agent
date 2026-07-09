@@ -131,12 +131,15 @@ router.post('/sessions/:id/delete', ensureAdmin, async (req, res) => {
 
 // Simple demo API that echoes back
 router.post('/api', ensureAdmin, express.json(), async (req, res) => {
-  const { message } = req.body || {};
+  const { message, sessionId } = req.body || {};
   const text = (message || '').toString().trim();
   if (!text) return res.json({ reply: 'Please type something.' });
   const reply = `You said: ${text}`;
-  history.push({ text, time: new Date(), userName: req.session.admin.name || 'You', userAbbr: 'Y' });
-  history.push({ text: reply, time: new Date(), userName: 'Assistant', userAbbr: 'A' });
+  const session = sessions.find(s => s.id === parseInt(sessionId));
+  if (session) {
+    session.history.push({ text, role: 'me', side: 'right' });
+    session.history.push({ text: reply, role: 'bot', side: 'left' });
+  }
   // Simple demo ApexCharts bar chart configuration
   const chart = {
     chart: { type: 'bar', height: 250 },
