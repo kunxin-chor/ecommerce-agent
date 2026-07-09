@@ -1,12 +1,11 @@
 const express = require('express');
+// new imports here
 const router = express.Router();
 
-function ensureAdmin(req, res, next) {
-  if (req.session && req.session.admin) return next();
-  return res.redirect('/admin/login');
-}
+const {ensureAdmin} = require('../middleware/auth');
 
 // In-memory messages for demo; replace with DB if you want persistence
+// Remove this when you have a database
 const history = [
   { text: 'Hello! How can I help?', time: new Date(), userName: 'Assistant', userAbbr: 'A' }
 ];
