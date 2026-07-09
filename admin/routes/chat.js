@@ -7,7 +7,7 @@ const { RunnableWithMessageHistory } = require('@langchain/core/runnables');
 const pool = require('../../database');
 const router = express.Router();
 
-const { ensureAdmin } = require('../middleware/auth');
+const  ensureAdmin = require('../middlewares/ensureAdmin');
 
 // MariaDBChatHistory
 class MariaDBChatHistory extends BaseChatMessageHistory {
@@ -129,32 +129,24 @@ router.post('/sessions/:id/delete', ensureAdmin, async (req, res) => {
 });
 
 
-// Simple demo API that echoes back
 router.post('/api', ensureAdmin, express.json(), async (req, res) => {
-  const { message, sessionId } = req.body || {};
-  const text = (message || '').toString().trim();
-  if (!text) return res.json({ reply: 'Please type something.' });
-  const reply = `You said: ${text}`;
-  const session = sessions.find(s => s.id === parseInt(sessionId));
-  if (session) {
-    session.history.push({ text, role: 'me', side: 'right' });
-    session.history.push({ text: reply, role: 'bot', side: 'left' });
-  }
-  // Simple demo ApexCharts bar chart configuration
-  const chart = {
-    chart: { type: 'bar', height: 250 },
-    series: [
-      {
-        name: 'Demo',
-        data: [10, 20, 15, 30]
-      }
-    ],
-    xaxis: {
-      categories: ['Q1', 'Q2', 'Q3', 'Q4']
-    }
-  };
+  try {
+    const { message, sessionId } = req.body || {};
+    const text = (message || '').toString().trim();
+    if (!text) return res.json({ reply: 'Please type something.' });
+    if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
 
-  res.json({ reply, chart });
+    const response = await chainWithHistory.invoke(
+      { input: text },
+      { configurable: { sessionId: sessionId.toString() } }
+    );
+
+    res.json({ reply: response.content });
+  } catch (error) {
+    console.error('Chat error:', error);
+    res.status(500).json({ reply: 'Sorry, something went wrong.' });
+  }
 });
 
 module.exports = router;
+
