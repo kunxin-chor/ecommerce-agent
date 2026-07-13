@@ -20,10 +20,15 @@ async function getLowStockProducts(threshold) {
   return await orderData.getLowStockProducts(threshold);
 }
 
+async function getProductStock(productId) {
+  return await orderData.getProductStock(productId);
+}
+
 module.exports = {
   listOrders,
   getCompletedOrdersByDateRange,
   getCompletedOrdersByDateRangeForProduct,
   tabulateSales,
-  getLowStockProducts
+  getLowStockProducts,
+  getProductStock
 };

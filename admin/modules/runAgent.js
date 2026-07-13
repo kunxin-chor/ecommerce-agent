@@ -1,29 +1,6 @@
-const { createAgent } = require('langchain');
 const { HumanMessage } = require('@langchain/core/messages');
-const { model } = require('../../gemini');
+const { agent } = require('../../gemini');
 const { MariaDBChatHistory } = require('./MariaDBHistory');
-const {
-  getCompletedOrdersTool,
-  getCompletedOrdersForProductTool,
-  tabulateSalesTool,
-  getLowStockTool
-} = require('../tools/salesTool');
-const { generateApexChartTool } = require('../tools/chartTool');
-
-const tools = [
-  getCompletedOrdersTool,
-  getCompletedOrdersForProductTool,
-  tabulateSalesTool,
-  getLowStockTool,
-  generateApexChartTool
-];
-
-// createAgent handles the tool-calling loop automatically
-const agent = createAgent({
-  model,
-  tools,
-  systemPrompt: 'You are a helpful admin assistant for an ecommerce store. Format your responses using markdown.',
-});
 
 function extractText(content) {
   if (Array.isArray(content)) {
