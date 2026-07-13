@@ -53,7 +53,7 @@ async function tabulateSales(startDate, endDate) {
 
   const [byProduct] = await pool.execute(`
     SELECT p.name AS product_name, COUNT(DISTINCT o.id) AS order_count,
-           SUM(oi.quantity) AS units_sold, SUM(oi.quantity * oi.price) AS revenue
+           SUM(oi.quantity) AS units_sold, SUM(oi.quantity * p.price) AS revenue
     FROM orders o
     JOIN order_items oi ON oi.order_id = o.id
     JOIN products p ON p.id = oi.product_id
@@ -75,4 +75,12 @@ async function getLowStockProducts(threshold) {
   return rows;
 }
 
-module.exports = { listOrders, getCompletedOrdersByDateRange, getCompletedOrdersByDateRangeForProduct, tabulateSales, getLowStockProducts };
+async function getProductStock(productId) {
+  const [rows] = await pool.execute(`
+    SELECT id, name, brand, stock FROM products
+    WHERE id = ?
+  `, [productId]);
+  return rows[0];
+}
+
+module.exports = { listOrders, getCompletedOrdersByDateRange, getCompletedOrdersByDateRangeForProduct, tabulateSales, getLowStockProducts, getProductStock };
