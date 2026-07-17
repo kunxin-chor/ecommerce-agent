@@ -63,6 +63,28 @@ async function setProductTags(productId, tagIds) {
   await pool.query(`INSERT INTO product_tags (product_id, tag_id) VALUES ?`, [values]);
 }
 
+async function getReviewsByProductId(productId) {
+  const [rows] = await pool.execute(
+    `SELECT id, title, review_text, review_date, rating FROM reviews WHERE product_id = ? ORDER BY review_date DESC`,
+    [productId]
+  );
+  return rows;
+}
+
+async function getReviewById(reviewId) {
+  const [rows] = await pool.execute(`SELECT * FROM reviews WHERE id = ?`, [reviewId]);
+  return rows[0];
+}
+
+async function updateReviewEmbedding(reviewId, embedding) {
+  // TODO
+}
+
+async function searchReviewEmbeddings(productId, queryEmbedding, limit = 10) {
+  // TODO
+  return []
+}
+
 module.exports = {
   getAllProducts,
   getProductById,
@@ -72,5 +94,9 @@ module.exports = {
   getAllCategories,
   getAllTags,
   getProductTags,
-  setProductTags
+  setProductTags,
+  getReviewsByProductId,
+  getReviewById,
+  updateReviewEmbedding,
+  searchReviewEmbeddings
 };
