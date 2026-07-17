@@ -1,144 +1,153 @@
 (function () {
-  const container = document.getElementById('admin-chat');
-  if (!container) {
-    console.error('admin-chat container not found');
-    return;
-  }
-  if (typeof quikchat !== 'function') {
-    console.error('quikchat library not loaded');
-    return;
-  }
-
-  let initialHistory = [];
   const historyScript = document.getElementById('initialHistory');
-  if (historyScript && historyScript.textContent) {
-    try {
-      initialHistory = JSON.parse(historyScript.textContent) || [];
-    } catch (e) {
-      console.error('Failed to parse initial history JSON', e);
-    }
-  }
+  const initialHistory = historyScript ? JSON.parse(historyScript.textContent) : [];
 
   let activeSessionId = null;
   const sessionScript = document.getElementById('activeSessionId');
   if (sessionScript && sessionScript.textContent) {
     try {
       activeSessionId = JSON.parse(sessionScript.textContent);
-    } catch (e) {
-      console.error('Failed to parse active session ID', e);
-    }
+    } catch (e) {}
   }
 
-  function renderApexChart(targetElement, chartOptions) {
-    if (!window.ApexCharts) {
-      console.warn('ApexCharts not loaded; cannot render chart.');
-      return;
-    }
-
-    const chartDiv = document.createElement('div');
-    chartDiv.className = 'chat-apexchart';
-    chartDiv.style.width = '100%';
-    const height = (chartOptions && chartOptions.chart && chartOptions.chart.height) || 260;
-    chartDiv.style.height = height + 'px';
-    targetElement.appendChild(chartDiv);
-
-    try {
-      const chart = new window.ApexCharts(chartDiv, chartOptions);
-      chart.render();
-    } catch (e) {
-      console.error('Error rendering ApexChart', e);
-      chartDiv.textContent = 'Failed to render chart.';
-    }
-  }
-
-  // Create the chat widget using quikchat
   const chat = new quikchat('#admin-chat', async function (chatInstance, msg) {
-    // If no session is active, create one automatically
+    // Auto-create session on first message
     if (!activeSessionId) {
       try {
         const r = await axios.post('/admin/chat/sessions');
         activeSessionId = r.data.sessionId;
-        // Update URL so refreshing keeps this session
         window.history.pushState({}, '', `/admin/chat?session=${activeSessionId}`);
       } catch (err) {
-        console.error('Error creating chat session', err);
-        chatInstance.messageAddNew('Error creating chat session.', 'bot', 'left', 'bot');
+        chatInstance.messageAddNew('Error creating session.', 'bot', 'left', 'bot');
         return;
       }
     }
 
-    // Add user message to UI
+    // Show user message
     chatInstance.messageAddNew(msg, 'me', 'right', 'user');
+    chatInstance.inputAreaSetEnabled(false);
+    chatInstance.inputAreaSetButtonText('Thinking...');
+
+    const steps = [];
+    let thinkingId = chatInstance.messageAddNew('⏳ Thinking...', 'bot', 'left', 'bot');
+
+    function removeThinkingPlaceholder() {
+      if (thinkingId !== null) {
+        chatInstance.messageRemove(thinkingId);
+        thinkingId = null;
+      }
+    }
 
     try {
-      const res = await axios.post('/admin/chat/api', { message: msg, sessionId: activeSessionId });
-      const data = res.data;
+      // Use fetch (not axios) for SSE streaming
+      const res = await fetch('/admin/chat/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, sessionId: activeSessionId })
+      });
 
-      const replyText = (data && data.reply) || '(no reply)';
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      // Add bot text reply and capture its message ID
-      const replyId = chatInstance.messageAddNew(
-        replyText,
-        'bot',
-        'left',
-        'bot'
-      );
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-      // If the server returns a chart config, render it inside the same message bubble
-      if (data && data.chart && replyId != null) {
-        const msgNode = chatInstance.messageGetDOMObject(replyId);
-        if (msgNode) {
-          renderApexChart(msgNode, data.chart);
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === 'tool_call') {
+            removeThinkingPlaceholder();
+            const stepText = `🔧 Calling tool: **${data.tool}**`;
+            steps.push(stepText);
+            chatInstance.messageAddNew(stepText, 'bot', 'left', 'bot');
+          }
+
+          if (data.type === 'tool_result') {
+            removeThinkingPlaceholder();
+            const stepText = `✅ Got result from: **${data.tool}**`;
+            steps.push(stepText);
+            chatInstance.messageAddNew(stepText, 'bot', 'left', 'bot');
+          }
+
+          if (data.type === 'done') {
+            const replyText = data.reply || '(no reply)';
+            let replyId;
+
+            if (steps.length > 0) {
+              // Keep all previous step bubbles; add the final reply as a new message.
+              replyId = chatInstance.messageAddNew(replyText, 'bot', 'left', 'bot');
+              removeThinkingPlaceholder();
+            } else {
+              chatInstance.messageReplaceContent(thinkingId, replyText);
+              replyId = thinkingId;
+              thinkingId = null;
+            }
+
+            if (data.chart && replyId) {
+              const replyEl = chatInstance.messageGetDOMObject(replyId);
+              if (replyEl) renderApexChart(replyEl, data.chart);
+            }
+          }
         }
       }
+
+      chatInstance.inputAreaSetEnabled(true);
+      chatInstance.inputAreaSetButtonText('Send');
+
     } catch (err) {
       console.error('Error calling /admin/chat/api', err);
-      chatInstance.messageAddNew('Error contacting server.', 'bot', 'left', 'bot');
+      chatInstance.messageReplaceContent(thinkingId, 'Error contacting server.');
+      chatInstance.inputAreaSetEnabled(true);
+      chatInstance.inputAreaSetButtonText('Send');
     }
   });
 
-  // Seed initial history into the widget
+  // Seed history with charts
   if (Array.isArray(initialHistory) && initialHistory.length) {
     initialHistory.forEach(function (item) {
       if (!item.text) return;
-      const msgId = chat.messageAddNew(item.text, item.role, item.side, item.role);
-
-      // Re-render any chart stored with this message
-      if (item.chart && msgId != null) {
-        const msgNode = chat.messageGetDOMObject(msgId);
-        if (msgNode) {
-          renderApexChart(msgNode, item.chart);
-        }
+      chat.messageAddNew(item.text, item.role, item.side, item.role);
+      if (item.chart) {
+        const messages = document.querySelectorAll('.quikchat-message');
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage) renderApexChart(lastMessage, item.chart);
       }
     });
   }
 
-  // New Chat button
-  const newChatBtn = document.getElementById('newChatBtn');
-  if (newChatBtn) {
-    newChatBtn.addEventListener('click', async () => {
-      try {
-        const r = await axios.post('/admin/chat/sessions');
-        // Full page load so the sidebar refreshes
-        window.location.href = `/admin/chat?session=${r.data.sessionId}`;
-      } catch (err) {
-        console.error('Error creating chat session', err);
-      }
-    });
+  function renderApexChart(targetElement, chartOptions) {
+    if (!window.ApexCharts) {
+      console.warn('ApexCharts not loaded');
+      return;
+    }
+    const chartDiv = document.createElement('div');
+    chartDiv.style.width = '100%';
+    chartDiv.style.height = ((chartOptions.chart && chartOptions.chart.height) || 260) + 'px';
+    targetElement.appendChild(chartDiv);
+    try {
+      new window.ApexCharts(chartDiv, chartOptions).render();
+    } catch (e) {
+      console.error('Error rendering chart', e);
+    }
   }
 
-  // Delete session buttons
+  document.getElementById('newChatBtn').addEventListener('click', async () => {
+    const r = await axios.post('/admin/chat/sessions');
+    window.location.href = `/admin/chat?session=${r.data.sessionId}`;
+  });
+
   document.querySelectorAll('.delete-session-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
       const sessionId = btn.dataset.sessionId;
-      try {
-        await axios.post(`/admin/chat/sessions/${sessionId}/delete`);
-      } catch (err) {
-        console.error('Error deleting chat session', err);
-        return;
-      }
-      // If deleting the active session, go to base page
+      await axios.post(`/admin/chat/sessions/${sessionId}/delete`);
       if (parseInt(sessionId) === activeSessionId) {
         window.location.href = '/admin/chat';
       } else {

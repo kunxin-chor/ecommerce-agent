@@ -3,13 +3,24 @@ const { z } = require('zod');
 
 const generateApexChartTool = tool(
   async ({ type, title, series, categories, xaxisTitle, yaxisTitle }) => {
+    const chartType = type || 'bar';
     const chartConfig = {
-      chart: { type: type || 'bar', height: 320 },
+      chart: { type: chartType, height: 320 },
       title: { text: title || 'Chart', align: 'center' },
       series: series || [],
-      xaxis: { categories: categories || [], title: { text: xaxisTitle } },
-      yaxis: { title: { text: yaxisTitle } }
     };
+
+    if (chartType === 'pie' || chartType === 'donut') {
+      // ApexCharts pie/donut expects a flat numeric series and labels.
+      const firstSeries = (series && series[0]) || { data: [] };
+      chartConfig.series = firstSeries.data || [];
+      chartConfig.labels = categories || [];
+      chartConfig.legend = { position: 'bottom' };
+    } else {
+      chartConfig.xaxis = { categories: categories || [], title: { text: xaxisTitle } };
+      chartConfig.yaxis = { title: { text: yaxisTitle } };
+    }
+
     return JSON.stringify({ chartConfig, message: 'Chart generated successfully' });
   },
   {

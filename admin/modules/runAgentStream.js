@@ -1,3 +1,9 @@
+
+const { MariaDBChatHistory } = require('./MariaDBHistory');
+const { agent } = require('../../gemini');
+const { HumanMessage } = require('@langchain/core/messages');
+
+
 async function runAgentStream(input, config, onStep) {
   const { sessionId } = config.configurable;
   const history = new MariaDBChatHistory(sessionId);
@@ -28,7 +34,7 @@ async function runAgentStream(input, config, onStep) {
         onStep('tool_result', { tool: toolMsg.name, result: toolMsg.content.substring(0, 200) });
         try {
           const parsed = JSON.parse(toolMsg.content);
-          if (parsed.chart && parsed.series) chart = parsed.chart;
+          if (parsed.chartConfig) chart = parsed.chartConfig;
         } catch (e) {}
       }
     }

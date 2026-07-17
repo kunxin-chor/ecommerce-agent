@@ -5,6 +5,7 @@ const router = express.Router();
 const ensureAdmin = require('../middlewares/ensureAdmin');
 const { MariaDBChatHistory } = require('../modules/MariaDBHistory');
 const { runAgent } = require('../modules/runAgent');
+const { runAgentStream } = require('../modules/runAgentStream');
 
 
 router.get('/', ensureAdmin, async (req, res) => {
@@ -77,17 +78,31 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
     if (!text) return res.json({ reply: 'Please type something.' });
     if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
 
-    const { reply, chart } = await runAgent(
+    // Set up Server-Sent Events
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const sendEvent = (type, data) => {
+      res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+    };
+
+    // Run the agent stream via chatEngine
+    const { reply, chart } = await runAgentStream(
       { input: text },
-      { configurable: { sessionId } }
+      { configurable: { sessionId: sessionId.toString() } },
+      (type, data) => sendEvent(type, data)
     );
 
-    res.json({ reply, chart });
+    // Send final answer
+    sendEvent('done', { reply, chart });
+    res.end();
+
   } catch (error) {
     console.error('Chat error:', error);
-    res.status(500).json({ reply: 'Sorry, something went wrong.' });
+    res.write(`data: ${JSON.stringify({ type: 'done', reply: 'Sorry, something went wrong.' })}\n\n`);
+    res.end();
   }
 });
-
 module.exports = router;
 
