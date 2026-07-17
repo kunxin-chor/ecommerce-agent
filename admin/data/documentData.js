@@ -15,4 +15,17 @@ async function upsertDocument(productId, { file_path, content = null }) {
   return r.insertId;
 }
 
-module.exports = { getDocumentByProductId, upsertDocument };
+
+async function deleteChunksByDocumentId(documentId) {
+  await pool.execute(`DELETE FROM document_chunks WHERE document_id = ?`, [documentId]);
+}
+
+async function insertChunk(documentId, chunkText, chunkIndex, embedding) {
+    // TODO
+}
+
+async function searchChunkEmbeddings(documentId, queryEmbedding, limit = 5) {
+  // TODO
+}
+
+module.exports = { getDocumentByProductId, upsertDocument, deleteChunksByDocumentId, insertChunk, searchChunkEmbeddings };
