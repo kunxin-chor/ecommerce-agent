@@ -63,17 +63,19 @@ async function setProductTags(productId, tagIds) {
   await pool.query(`INSERT INTO product_tags (product_id, tag_id) VALUES ?`, [values]);
 }
 
+const ZERO_VECTOR_TEXT = '[' + Array(3072).fill(0).join(',') + ']';
 async function getReviewsByProductId(productId) {
   const [rows] = await pool.execute(
     `SELECT id, title, review_text, review_date, rating,
-            embedding IS NOT NULL AS has_embedding
+            VEC_DISTANCE(embedding, VEC_FromText(?)) > 0 AS has_embedding
      FROM reviews
      WHERE product_id = ?
      ORDER BY review_date DESC`, 
-    [productId]
+    [ZERO_VECTOR_TEXT, productId]
   );
   return rows;
 }
+
 async function getReviewById(reviewId) {
   const [rows] = await pool.execute(`SELECT * FROM reviews WHERE id = ?`, [reviewId]);
   return rows[0];
