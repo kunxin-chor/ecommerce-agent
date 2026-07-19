@@ -57,6 +57,17 @@ router.post('/', ensureAdmin, upload.single('pdf'), async (req, res) => {
   res.redirect('/admin/products');
 });
 
+// view product detail with reviews
+router.get('/:id/view', ensureAdmin, async (req, res) => {
+  const [product, reviews, document] = await Promise.all([
+    productServices.getProductById(req.params.id),
+    productServices.getReviewsByProductId(req.params.id),
+    documentServices.getByProductId(req.params.id)
+  ]);
+  if (document) product.file_path = document.file_path;
+  res.render('products/view', { admin: req.session.admin, product, reviews });
+});
+
 // edit form
 router.get('/:id/edit', ensureAdmin, async (req, res) => {
   const [product, categories, tags, selected, doc] = await Promise.all([
