@@ -11,6 +11,7 @@ const { model } = require('../../gemini');
 const { z } = require('zod');
 
 const { extractTextFromPDF, chunkText, generateEmbedding } = require("../services/embeddingServices");
+const getPoleEmbeddings = require('../modules/getPoleEmbeddings');
 
 const modelWithSearch = new ChatGoogle({
   model: 'gemini-2.5-flash',
@@ -252,6 +253,7 @@ router.post('/:id/process-reviews', ensureAdmin, async (req, res) => {
     let processedCount = 0;
 
     for (const review of reviews) {
+      console.log(review.has_embedding)
       if (review.has_embedding) {
         continue;
       }
@@ -269,6 +271,9 @@ router.post('/:id/process-reviews', ensureAdmin, async (req, res) => {
     res.status(500).send('Error processing reviews');
   }
 });
+
+
+
 
 // sentiment analysis over vector-retrieved reviews
 router.get('/:id/analyse-sentiments', ensureAdmin, async (req, res) => {
@@ -305,6 +310,52 @@ Format your response in markdown.`;
   } catch (error) {
     console.error('Sentiment analysis error:', error);
     res.status(500).json({ sentiment: 'Error analysing sentiments.' });
+  }
+});
+
+// pole analysis: contrast positive vs negative themes
+router.get('/:id/pole-analysis', ensureAdmin, async (req, res) => {
+  try {
+    const product = await productServices.getProductById(req.params.id);
+    const { positive, negative } = await getPoleEmbeddings();
+
+    const [positiveReviews, negativeReviews] = await Promise.all([
+      productServices.searchReviewEmbeddings(req.params.id, positive, 5),
+      productServices.searchReviewEmbeddings(req.params.id, negative, 5)
+    ]);
+
+    
+
+    if (positiveReviews.length === 0 && negativeReviews.length === 0) {
+      return res.json({ summary: 'No processed reviews found. Please process reviews first.', positives: [], negatives: [] });
+    }
+
+    const positiveContext = positiveReviews.map(r => `Rating: ${r.rating}/5 - ${r.title}: ${r.review_text}`).join('\n\n');
+    const negativeContext = negativeReviews.map(r => `Rating: ${r.rating}/5 - ${r.title}: ${r.review_text}`).join('\n\n');
+
+    console.log(negativeContext);
+
+    const prompt = `You are analysing polarized feedback for ${product.name} by ${product.brand}.
+
+Positive pole reviews:
+${positiveContext || 'None'}
+
+Negative pole reviews:
+${negativeContext || 'None'}
+
+Provide:
+1. Key praise themes (positive pole)
+2. Key complaint themes (negative pole)
+3. How the positives and negatives balance out overall
+4. Recommended next actions for the product team
+
+Format your answer in markdown.`;
+
+    const response = await model.invoke(prompt);
+    res.json({ summary: response.content, positives: positiveReviews, negatives: negativeReviews });
+  } catch (error) {
+    console.error('Pole analysis error:', error);
+    res.status(500).json({ summary: 'Error generating pole analysis.' });
   }
 });
 

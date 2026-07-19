@@ -1,5 +1,8 @@
 const pool = require('../../database');
 
+const VECTOR_DIMENSIONS = 3072;
+const ZERO_VECTOR_TEXT = `[${'0,'.repeat(VECTOR_DIMENSIONS - 1)}0]`;
+
 async function getAllProducts() {
   const [rows] = await pool.execute(
     `SELECT p.id, p.name, p.brand, CAST(p.price AS DOUBLE) AS price, p.imageUrl, p.description, p.stock,
@@ -66,11 +69,11 @@ async function setProductTags(productId, tagIds) {
 async function getReviewsByProductId(productId) {
   const [rows] = await pool.execute(
     `SELECT id, title, review_text, review_date, rating,
-            embedding IS NOT NULL AS has_embedding
+            VEC_DISTANCE(embedding, VEC_FromText(?)) > 0 AS has_embedding
      FROM reviews
      WHERE product_id = ?
      ORDER BY review_date DESC`, 
-    [productId]
+    [ZERO_VECTOR_TEXT, productId]
   );
   return rows;
 }
@@ -93,10 +96,10 @@ async function searchReviewEmbeddings(productId, queryEmbedding, limit = 10) {
   const [rows] = await pool.execute(
     `SELECT id, title, review_text, rating, VEC_DISTANCE(embedding, VEC_FromText('${vectorString}')) as distance
      FROM reviews
-     WHERE product_id = ? AND embedding IS NOT NULL
+     WHERE product_id = ? AND VEC_DISTANCE(embedding, VEC_FromText(?)) > 0
      ORDER BY distance ASC
      LIMIT ?`,
-    [productId, limit]
+    [productId, ZERO_VECTOR_TEXT, limit]
   );
   return rows;
 }

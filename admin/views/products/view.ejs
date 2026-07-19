@@ -7,6 +7,7 @@
       <button class="btn btn-outline-warning" type="submit">Process Reviews</button>
     </form>
     <button class="btn btn-outline-info" id="analyseSentimentsBtn">Analyse Sentiments</button>
+    <button class="btn btn-outline-success" id="poleAnalysisBtn">Polarised Review Analysis</button>
     <a class="btn btn-outline-secondary" href="/admin/products/<%= product.id %>/edit">Edit</a>
     <a class="btn btn-outline-secondary" href="/admin/products">Back</a>
   </div>
@@ -56,6 +57,19 @@
   </div>
 </div>
 
+<div id="poleResult" class="card mb-4" style="display:none;">
+  <div class="card-body">
+    <h5 class="card-title">Polarised Review Analysis</h5>
+    <div id="poleSummary"></div>
+    <div class="mt-3">
+      <h6>Positive Pole Reviews</h6>
+      <ul id="polePositiveList" class="mb-3"></ul>
+      <h6>Negative Pole Reviews</h6>
+      <ul id="poleNegativeList"></ul>
+    </div>
+  </div>
+</div>
+
 <h2 class="mb-3">Reviews</h2>
 <% if (reviews.length === 0) { %>
   <p class="text-muted">No reviews yet.</p>
@@ -95,6 +109,36 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Analyse Sentiments';
+    }
+  });
+
+  document.getElementById('poleAnalysisBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('poleAnalysisBtn');
+    btn.disabled = true;
+    btn.textContent = 'Analysing...';
+
+    try {
+      const response = await axios.get('/admin/products/<%= product.id %>/pole-analysis');
+      const { summary, positives = [], negatives = [] } = response.data;
+      document.getElementById('poleSummary').innerHTML = marked.parse(summary || 'No summary available.');
+
+      const positiveList = document.getElementById('polePositiveList');
+      positiveList.innerHTML = positives.length
+        ? positives.map(r => `<li><strong>${r.rating}/5</strong> - ${r.title}</li>`).join('')
+        : '<li class="text-muted">No positive pole reviews.</li>';
+
+      const negativeList = document.getElementById('poleNegativeList');
+      negativeList.innerHTML = negatives.length
+        ? negatives.map(r => `<li><strong>${r.rating}/5</strong> - ${r.title}</li>`).join('')
+        : '<li class="text-muted">No negative pole reviews.</li>';
+
+      document.getElementById('poleResult').style.display = 'block';
+    } catch (err) {
+      console.error('Pole analysis failed:', err);
+      alert('Failed to analyse polarised reviews');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Polarised Review Analysis';
     }
   });
 
