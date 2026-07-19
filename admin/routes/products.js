@@ -10,6 +10,8 @@ const { ChatGoogle } = require('@langchain/google/node');
 const { model } = require('../../gemini');
 const { z } = require('zod');
 
+const { extractTextFromPDF, chunkText, generateEmbedding } = require("../services/embeddingServices");
+
 const modelWithSearch = new ChatGoogle({
   model: 'gemini-2.5-flash',
   apiKey: process.env.GEMINI_API_KEY,
@@ -69,47 +71,6 @@ router.post('/', ensureAdmin, upload.single('pdf'), async (req, res) => {
   res.redirect('/admin/products');
 });
 
-// edit form
-router.get('/:id/edit', ensureAdmin, async (req, res) => {
-  const [product, categories, tags, selected, doc] = await Promise.all([
-    productServices.getProductById(req.params.id),
-    productServices.getAllCategories(),
-    productServices.getAllTags(),
-    productServices.getProductTags(req.params.id),
-    documentServices.getByProductId(req.params.id)
-  ]);
-  const selectedTagIds = new Set(selected.map(t => t.id));
-  res.render('products/edit', { admin: req.session.admin, product, categories, tags, selectedTagIds, document: doc, errors: null });
-});
-
-// update
-router.post('/:id', ensureAdmin, async (req, res) => {
-  const { category_id, name, brand, price, imageUrl, description, stock } = req.body;
-  const tagIds = Array.isArray(req.body['tags[]']) ? req.body['tags[]'] : (req.body['tags[]'] ? [req.body['tags[]']] : []);
-  await productServices.updateProduct(req.params.id, { category_id, name, brand, price, imageUrl, description, stock });
-  await productServices.setProductTags(Number(req.params.id), tagIds.map(Number));
-  res.redirect('/admin/products');
-});
-
-// upload PDF for product document
-router.post('/:id/upload', ensureAdmin, upload.single('pdf'), async (req, res) => {
-  await documentServices.upsert(req.params.id, { file_path: `/uploads/${req.file.filename}`, content: null });
-  res.redirect(`/admin/products/${req.params.id}/edit`);
-});
-
-// stub for chunk & embed
-router.post('/:id/chunk-embed', ensureAdmin, async (req, res) => {
-  // TODO: implement chunking and embeddings with Gemini
-  console.log(`Stub: would chunk and embed for product ${req.params.id}`);
-  res.redirect(`/admin/products/${req.params.id}/edit`);
-});
-
-// delete
-router.post('/:id/delete', ensureAdmin, async (req, res) => {
-  await productServices.deleteProduct(req.params.id);
-  res.redirect('/admin/products');
-});
-
 // Generate product listing from natural language
 router.post('/ai/generate', ensureAdmin, express.json(), async (req, res) => {
   try {
@@ -148,6 +109,84 @@ router.post('/ai/generate', ensureAdmin, express.json(), async (req, res) => {
   }
 });
 
+// view product detail with reviews
+router.get('/:id/view', ensureAdmin, async (req, res) => {
+  const [product, reviews, document] = await Promise.all([
+    productServices.getProductById(req.params.id),
+    productServices.getReviewsByProductId(req.params.id),
+    documentServices.getByProductId(req.params.id)
+  ]);
+  if (document) product.file_path = document.file_path;
+  res.render('products/view', { admin: req.session.admin, product, reviews });
+});
+
+
+// edit form
+router.get('/:id/edit', ensureAdmin, async (req, res) => {
+  const [product, categories, tags, selected, doc] = await Promise.all([
+    productServices.getProductById(req.params.id),
+    productServices.getAllCategories(),
+    productServices.getAllTags(),
+    productServices.getProductTags(req.params.id),
+    documentServices.getByProductId(req.params.id)
+  ]);
+  const selectedTagIds = new Set(selected.map(t => t.id));
+  res.render('products/edit', { admin: req.session.admin, product, categories, tags, selectedTagIds, document: doc, errors: null });
+});
+
+// update
+router.post('/:id', ensureAdmin, async (req, res) => {
+  const { category_id, name, brand, price, imageUrl, description, stock } = req.body;
+  const tagIds = Array.isArray(req.body['tags[]']) ? req.body['tags[]'] : (req.body['tags[]'] ? [req.body['tags[]']] : []);
+  await productServices.updateProduct(req.params.id, { category_id, name, brand, price, imageUrl, description, stock });
+  await productServices.setProductTags(Number(req.params.id), tagIds.map(Number));
+  res.redirect('/admin/products');
+});
+
+// upload PDF for product document
+router.post('/:id/upload', ensureAdmin, upload.single('pdf'), async (req, res) => {
+  await documentServices.upsert(req.params.id, { file_path: `/uploads/${req.file.filename}`, content: null });
+  res.redirect(`/admin/products/${req.params.id}/edit`);
+});
+
+// chunk & embed pdf
+router.post('/:id/chunk-embed', ensureAdmin, async (req, res) => {
+  try {
+    // 1. check if a PDF exists
+    const doc = await documentServices.getByProductId(req.params.id);
+    if (!doc || !doc.file_path) {
+      return res.status(400).send('No PDF uploaded for this product');
+    }
+
+    // 2. chunk the PDF
+    const text = await extractTextFromPDF(doc.file_path);
+    const chunks = chunkText(text);
+
+    // 3. remove any existing chunks
+    await documentServices.deleteChunks(doc.id);
+
+    // 4. create embedding for each chunk
+    for (let i = 0; i < chunks.length; i++) {
+      console.log("Chunking " + i);
+      const embedding = await generateEmbedding(chunks[i]);
+      await documentServices.insertChunk(doc.id, chunks[i], i, embedding);
+    }
+
+    console.log(`Chunked and embedded ${chunks.length} chunks for product ${req.params.id}`);
+    res.redirect(`/admin/products/${req.params.id}/edit`);
+  } catch (error) {
+    console.error('Chunk and embed error:', error);
+    res.status(500).send('Error processing PDF');
+  }
+});
+
+// delete
+router.post('/:id/delete', ensureAdmin, async (req, res) => {
+  await productServices.deleteProduct(req.params.id);
+  res.redirect('/admin/products');
+});
+
+
 // Generate AI summary of online reviews
 router.get('/:id/reviews', ensureAdmin, async (req, res) => {
   try {
@@ -165,5 +204,7 @@ router.get('/:id/reviews', ensureAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to get reviews' });
   }
 });
+
+
 
 module.exports = router;

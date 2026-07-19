@@ -44,9 +44,10 @@ CREATE TABLE reviews (
   review_text TEXT NOT NULL,
   review_date DATE NOT NULL,
   rating TINYINT UNSIGNED NOT NULL,
-  embedding VECTOR(768) COMMENT 'Vector embeddings from Gemini',
+  embedding VECTOR(3072) NOT NULL COMMENT 'Vector embeddings from Gemini',
   CONSTRAINT chk_rating_range CHECK (rating BETWEEN 1 AND 5),
-  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  VECTOR INDEX (embedding)
 );
 
 -- Users table
@@ -59,6 +60,26 @@ CREATE TABLE users (
   country VARCHAR(50),
   role ENUM('user', 'admin') DEFAULT 'user',
   created_at DATETIME DEFAULT NOW()
+);
+
+-- Chat sessions table
+CREATE TABLE chat_sessions (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  admin_id INT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  created_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Chat messages table
+CREATE TABLE chat_messages (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  session_id INT UNSIGNED NOT NULL,
+  role ENUM('human', 'ai') NOT NULL,
+  content TEXT NOT NULL,
+  chart_config JSON NULL,
+  created_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 );
 
 CREATE TABLE marketing_preferences (
@@ -122,7 +143,8 @@ CREATE TABLE document_chunks (
   document_id INT UNSIGNED NOT NULL,
   chunk_text TEXT NOT NULL,
   chunk_index INT UNSIGNED NOT NULL,
-  embedding VECTOR(768) NOT NULL COMMENT 'Vector embeddings from Gemini',
+  embedding VECTOR(3072) NOT NULL COMMENT 'Vector embeddings from Gemini',
   created_at DATETIME DEFAULT NOW(),
-  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+  VECTOR INDEX (embedding)
 );
