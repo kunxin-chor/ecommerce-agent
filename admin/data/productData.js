@@ -1,8 +1,5 @@
 const pool = require('../../database');
 
-const VECTOR_DIMENSIONS = 3072;
-const ZERO_VECTOR_TEXT = `[${'0,'.repeat(VECTOR_DIMENSIONS - 1)}0]`;
-
 async function getAllProducts() {
   const [rows] = await pool.execute(
     `SELECT p.id, p.name, p.brand, CAST(p.price AS DOUBLE) AS price, p.imageUrl, p.description, p.stock,
@@ -66,10 +63,12 @@ async function setProductTags(productId, tagIds) {
   await pool.query(`INSERT INTO product_tags (product_id, tag_id) VALUES ?`, [values]);
 }
 
+const VECTOR_DIMENSIONS = 3072;
+const ZERO_VECTOR_TEXT = `[${'0,'.repeat(VECTOR_DIMENSIONS - 1)}0]`;
 async function getReviewsByProductId(productId) {
   const [rows] = await pool.execute(
     `SELECT id, title, review_text, review_date, rating,
-            VEC_DISTANCE(embedding, VEC_FromText(?)) > 0 AS has_embedding
+            VEC_DISTANCE_EUCLIDEAN(embedding, VEC_FromText(?)) > 0 AS has_embedding
      FROM reviews
      WHERE product_id = ?
      ORDER BY review_date DESC`, 
