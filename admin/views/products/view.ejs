@@ -1,0 +1,121 @@
+<%- contentFor('title') %><%= product.name %>
+<%- contentFor('body') %>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1><%= product.name %></h1>
+  <div>
+    <form method="post" action="/admin/products/<%= product.id %>/process-reviews" class="d-inline">
+      <button class="btn btn-outline-warning" type="submit">Process Reviews</button>
+    </form>
+    <button class="btn btn-outline-info" id="analyseSentimentsBtn">Analyse Sentiments</button>
+    <a class="btn btn-outline-secondary" href="/admin/products/<%= product.id %>/edit">Edit</a>
+    <a class="btn btn-outline-secondary" href="/admin/products">Back</a>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-3">
+    <img src="<%= product.imageUrl %>" alt="<%= product.name %>" class="img-fluid rounded">
+  </div>
+  <div class="col-md-9">
+    <table class="table">
+      <tr><th>Brand</th><td><%= product.brand %></td></tr>
+      <tr><th>Price</th><td>$<%= product.price %></td></tr>
+      <tr><th>Stock</th><td><%= product.stock %></td></tr>
+      <tr><th>Description</th><td><%= product.description %></td></tr>
+      <tr>
+        <th>PDF</th>
+        <td>
+          <% if (product.file_path) { %>
+            <a href="<%= product.file_path %>" target="_blank">View PDF</a>
+          <% } else { %>
+            <span class="text-muted">No PDF uploaded</span>
+          <% } %>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Ask a Question About This Product</h5>
+    <div class="d-flex gap-2 mb-3">
+      <input class="form-control" type="text" id="questionInput" placeholder="e.g. What vitamins does this contain?" />
+      <button class="btn btn-outline-primary" id="askBtn" style="white-space: nowrap;">Ask Question</button>
+    </div>
+    <div id="answerResult" style="display:none;">
+      <div id="answerText"></div>
+    </div>
+  </div>
+</div>
+
+<div id="sentimentResult" class="card mb-4" style="display:none;">
+  <div class="card-body">
+    <h5 class="card-title">Sentiment Analysis</h5>
+    <div id="sentimentText"></div>
+  </div>
+</div>
+
+<h2 class="mb-3">Reviews</h2>
+<% if (reviews.length === 0) { %>
+  <p class="text-muted">No reviews yet.</p>
+<% } else { %>
+  <% reviews.forEach(r => { %>
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between">
+          <h5 class="card-title"><%= r.title %></h5>
+          <span class="text-warning">
+            <% for (let i = 0; i < r.rating; i++) { %>★<% } %>
+            <% for (let i = r.rating; i < 5; i++) { %>☆<% } %>
+          </span>
+        </div>
+        <p class="text-muted small"><%= new Date(r.review_date).toLocaleDateString() %></p>
+        <p class="card-text"><%= r.review_text %></p>
+      </div>
+    </div>
+  <% }) %>
+<% } %>
+
+<%- contentFor('scripts') %>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  document.getElementById('analyseSentimentsBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('analyseSentimentsBtn');
+    btn.disabled = true;
+    btn.textContent = 'Analysing...';
+
+    try {
+      const response = await axios.get('/admin/products/<%= product.id %>/analyse-sentiments');
+      document.getElementById('sentimentText').innerHTML = marked.parse(response.data.sentiment);
+      document.getElementById('sentimentResult').style.display = 'block';
+    } catch (err) {
+      console.error('Sentiment analysis failed:', err);
+      alert('Failed to analyse sentiments');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Analyse Sentiments';
+    }
+  });
+
+  document.getElementById('askBtn').addEventListener('click', async () => {
+    const question = document.getElementById('questionInput').value.trim();
+    if (!question) return;
+
+    const btn = document.getElementById('askBtn');
+    btn.disabled = true;
+    btn.textContent = 'Thinking...';
+
+    try {
+      const response = await axios.post('/admin/products/<%= product.id %>/ask', { question });
+      document.getElementById('answerText').innerHTML = marked.parse(response.data.answer);
+      document.getElementById('answerResult').style.display = 'block';
+    } catch (err) {
+      console.error('Ask question failed:', err);
+      alert('Failed to get answer');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Ask Question';
+    }
+  });
+</script>
