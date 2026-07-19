@@ -68,7 +68,7 @@ const ZERO_VECTOR_TEXT = `[${'0,'.repeat(VECTOR_DIMENSIONS - 1)}0]`;
 async function getReviewsByProductId(productId) {
   const [rows] = await pool.execute(
     `SELECT id, title, review_text, review_date, rating,
-            VEC_DISTANCE(embedding, VEC_FromText(?)) > 0 AS has_embedding
+            VEC_DISTANCE_EUCLIDEAN(embedding, VEC_FromText(?)) > 0 AS has_embedding
      FROM reviews
      WHERE product_id = ?
      ORDER BY review_date DESC`, 
