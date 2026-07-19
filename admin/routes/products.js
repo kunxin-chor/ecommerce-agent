@@ -245,6 +245,69 @@ router.get('/:id/reviews', ensureAdmin, async (req, res) => {
   }
 });
 
+// generate embeddings for this product's reviews
+router.post('/:id/process-reviews', ensureAdmin, async (req, res) => {
+  try {
+    const reviews = await productServices.getReviewsByProductId(req.params.id);
+    let processedCount = 0;
+
+    for (const review of reviews) {
+      if (review.has_embedding) {
+        continue;
+      }
+
+      const text = `${review.title}. ${review.review_text}`;
+      const embedding = await generateEmbedding(text);
+      await productServices.updateReviewEmbedding(review.id, embedding);
+      processedCount++;
+    }
+
+    console.log(`Processed embeddings for ${processedCount} of ${reviews.length} reviews for product ${req.params.id}`);
+    res.redirect(`/admin/products/${req.params.id}/view`);
+  } catch (error) {
+    console.error('Process reviews error:', error);
+    res.status(500).send('Error processing reviews');
+  }
+});
+
+// sentiment analysis over vector-retrieved reviews
+router.get('/:id/analyse-sentiments', ensureAdmin, async (req, res) => {
+  try {
+    const product = await productServices.getProductById(req.params.id);
+
+    // broad query to retrieve the most representative reviews
+    const queryEmbedding = await generateEmbedding('product quality customer satisfaction experience');
+    const relevantReviews = await productServices.searchReviewEmbeddings(req.params.id, queryEmbedding);
+
+    if (relevantReviews.length === 0) {
+      return res.json({ sentiment: 'No processed reviews found. Please process reviews first.' });
+    }
+
+    const reviewContext = relevantReviews.map(r =>
+      `Rating: ${r.rating}/5 - ${r.title}: ${r.review_text}`
+    ).join('\n\n');
+
+    const prompt = `You are a product sentiment analyst. Analyse the following customer reviews for ${product.name} and provide a concise sentiment summary.
+
+Reviews:
+${reviewContext}
+
+Provide:
+1. Overall sentiment (Positive/Negative/Mixed)
+2. Key themes customers praise
+3. Key themes customers criticize
+4. Overall recommendation
+
+Format your response in markdown.`;
+
+    const response = await model.invoke(prompt);
+    res.json({ sentiment: response.content });
+  } catch (error) {
+    console.error('Sentiment analysis error:', error);
+    res.status(500).json({ sentiment: 'Error analysing sentiments.' });
+  }
+});
+
 
 
 module.exports = router;

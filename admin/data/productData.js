@@ -65,7 +65,11 @@ async function setProductTags(productId, tagIds) {
 
 async function getReviewsByProductId(productId) {
   const [rows] = await pool.execute(
-    `SELECT id, title, review_text, review_date, rating FROM reviews WHERE product_id = ? ORDER BY review_date DESC`,
+    `SELECT id, title, review_text, review_date, rating,
+            embedding IS NOT NULL AS has_embedding
+     FROM reviews
+     WHERE product_id = ?
+     ORDER BY review_date DESC`, 
     [productId]
   );
   return rows;
@@ -77,12 +81,24 @@ async function getReviewById(reviewId) {
 }
 
 async function updateReviewEmbedding(reviewId, embedding) {
-  // TODO
+  const vectorString = `[${embedding.join(',')}]`;
+  await pool.execute(
+    `UPDATE reviews SET embedding = VEC_FromText('${vectorString}') WHERE id = ?`,
+    [reviewId]
+  );
 }
 
 async function searchReviewEmbeddings(productId, queryEmbedding, limit = 10) {
-  // TODO
-  return []
+  const vectorString = `[${queryEmbedding.join(',')}]`;
+  const [rows] = await pool.execute(
+    `SELECT id, title, review_text, rating, VEC_DISTANCE(embedding, VEC_FromText('${vectorString}')) as distance
+     FROM reviews
+     WHERE product_id = ? AND embedding IS NOT NULL
+     ORDER BY distance ASC
+     LIMIT ?`,
+    [productId, limit]
+  );
+  return rows;
 }
 
 module.exports = {
