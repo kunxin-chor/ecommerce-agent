@@ -52,6 +52,8 @@ async function searchReviewEmbeddings(productId, queryEmbedding, limit = 10) {
   return await productData.searchReviewEmbeddings(productId, queryEmbedding, limit);
 }
 
+
+
 module.exports = {
   getAllProducts,
   getProductById,

@@ -20,6 +20,16 @@ async function searchChunks(documentId, queryEmbedding, limit = 5) {
   return await documentData.searchChunkEmbeddings(documentId, queryEmbedding, limit);
 }
 
-module.exports = { getByProductId, upsert, deleteChunks, insertChunk, searchChunks };
+async function searchDistinctProducts(
+  queryEmbedding,
+  limit = 5
+) {
+  return await documentData.searchDistinctProductEmbeddings(
+    queryEmbedding,
+    limit
+  );
+}
+
+module.exports = { getByProductId, upsert, deleteChunks, insertChunk, searchChunks, searchDistinctProducts };
 
 
