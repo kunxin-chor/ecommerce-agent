@@ -63,7 +63,8 @@ async function setProductTags(productId, tagIds) {
   await pool.query(`INSERT INTO product_tags (product_id, tag_id) VALUES ?`, [values]);
 }
 
-const ZERO_VECTOR_TEXT = '[' + Array(3072).fill(0).join(',') + ']';
+const VECTOR_DIMENSIONS = 3072;
+const ZERO_VECTOR_TEXT = `[${'0,'.repeat(VECTOR_DIMENSIONS - 1)}0]`;
 async function getReviewsByProductId(productId) {
   const [rows] = await pool.execute(
     `SELECT id, title, review_text, review_date, rating,
