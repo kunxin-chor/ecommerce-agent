@@ -65,12 +65,15 @@ async function setProductTags(productId, tagIds) {
 
 async function getReviewsByProductId(productId) {
   const [rows] = await pool.execute(
-    `SELECT id, title, review_text, review_date, rating FROM reviews WHERE product_id = ? ORDER BY review_date DESC`,
+    `SELECT id, title, review_text, review_date, rating,
+            embedding IS NOT NULL AS has_embedding
+     FROM reviews
+     WHERE product_id = ?
+     ORDER BY review_date DESC`, 
     [productId]
   );
   return rows;
 }
-
 async function getReviewById(reviewId) {
   const [rows] = await pool.execute(`SELECT * FROM reviews WHERE id = ?`, [reviewId]);
   return rows[0];
