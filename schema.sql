@@ -56,7 +56,7 @@ CREATE TABLE users (
   name VARCHAR(100) NOT NULL,
   email VARCHAR(100) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
-  salutation VARCHAR(10),
+  salutation VARCHAR(10)
   country VARCHAR(50),
   role ENUM('user', 'admin') DEFAULT 'user',
   created_at DATETIME DEFAULT NOW()
