@@ -12,8 +12,10 @@ async function getAllProducts() {
 
 async function getProductById(id) {
   const [rows] = await pool.execute(
-    `SELECT id, name, brand, CAST(price AS DOUBLE) AS price, imageUrl, description, stock, category_id
-     FROM products WHERE id = ?`,
+    `SELECT products.id, products.name, products.brand, CAST(products.price AS DOUBLE) AS price, products.imageUrl, products.description, products.stock, products.category_id, categories.name as category_name
+     FROM products
+     JOIN categories ON products.category_id = categories.id
+     WHERE products.id = ?`,
     [id]
   );
   return rows[0];
