@@ -9,6 +9,14 @@ function extractText(content) {
   return content ? content.toString() : '';
 }
 
+// The todoListMiddleware stores the agent's plan in the state as an array of
+// { content, status } objects. We format it as a markdown list for the chat bubble.
+function extractPlan(todos) {
+  if (!Array.isArray(todos) || todos.length === 0) return null;
+  const lines = todos.map((todo, index) => `${index + 1}. ${todo.content}`);
+  return '📋 **Plan:**\n' + lines.join('\n');
+}
+
 async function runAgent(input, config) {
   const { sessionId } = config.configurable;
   const history = new MariaDBChatHistory(sessionId);
@@ -35,10 +43,13 @@ async function runAgent(input, config) {
   const lastMessage = response.messages[response.messages.length - 1];
   const reply = extractText(lastMessage.content) || '(no reply)';
 
+  // extract out the plan from the agent state
+  const plan = extractPlan(response.todos);
+
   await history.addUserMessage(input.input);
   await history.addAIChatMessage(reply, chart);
 
-  return { reply, chart };
+  return { reply, chart, plan };
 }
 
 module.exports = { runAgent };

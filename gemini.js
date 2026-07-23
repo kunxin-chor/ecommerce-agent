@@ -1,5 +1,7 @@
+// migrating to LangChain v1 agent
+const { createAgent, todoListMiddleware } = require('langchain');
 const { ChatGoogle } = require('@langchain/google/node');
-const { createReactAgent } = require('@langchain/langgraph/prebuilt');
+
 const {
   getCompletedOrdersTool,
   getCompletedOrdersForProductTool,
@@ -13,6 +15,11 @@ const {
   searchProductReviewsTool,
   getReviewSentimentPolesTool
 } = require('./admin/tools/reviewTools');
+const {
+  getProductDetailsTool,
+  createRestockOrderTool,
+  getCurrentDateTimeTool
+} = require('./admin/tools/planningTools');
 
 const model = new ChatGoogle({
   model: 'gemini-3.1-flash-lite',
@@ -29,7 +36,10 @@ const tools = [
   answerProductQuestionTool,
   getProductReviewsTool,
   searchProductReviewsTool,
-  getReviewSentimentPolesTool
+  getReviewSentimentPolesTool,
+  getProductDetailsTool,
+  createRestockOrderTool,
+  getCurrentDateTimeTool
 ];
 
 const modelWithTools = new ChatGoogle({
@@ -37,10 +47,10 @@ const modelWithTools = new ChatGoogle({
   apiKey: process.env.GEMINI_API_KEY,
 }).bindTools(tools);
 
-const agent = createReactAgent({
-  llm: model,
+const agent = createAgent({
+  model,
   tools,
-  messageModifier: 'You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs or image links in your text response — the chart will be rendered automatically by the frontend.',
+  prompt: 'You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs or image links in your text response — the chart will be rendered automatically by the frontend.',
+  middleware: [todoListMiddleware()]
 });
-
 module.exports = { model, modelWithTools, agent };
