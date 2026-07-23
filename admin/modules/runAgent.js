@@ -1,6 +1,7 @@
 const { HumanMessage } = require('@langchain/core/messages');
 const { agent } = require('../../gemini');
 const { MariaDBChatHistory } = require('./MariaDBHistory');
+const { takeChartConfig } = require('../tools/chartTools');
 
 function extractText(content) {
   if (Array.isArray(content)) {
@@ -33,13 +34,14 @@ async function runAgent(input, config) {
   const { sessionId } = config.configurable;
   const history = new MariaDBChatHistory(sessionId);
   const pastMessages = await history.getMessages();
+  let response;
 
   try {
     // The agent runs the full tool-calling loop internally.
     // 25 steps (the default) is not enough once planning is involved.
     response = await agent.invoke(
       { messages: [...pastMessages, new HumanMessage(input.input)] },
-      { recursionLimit: 50 }
+      { ...config, recursionLimit: 50 }
     );
   } catch (error) {
     if (isRecursionLimitError(error)) {
@@ -55,21 +57,13 @@ async function runAgent(input, config) {
   }
 
 
-  // Extract chart config from any chart tool results in the run
-  let chart = null;
-  for (const message of response.messages) {
-    if (message._getType() === 'tool') {
-      try {
-        const parsed = JSON.parse(extractText(message.content));
-        if (parsed.chartConfig) {
-          chart = parsed.chartConfig;
-        }
-      } catch (e) { }
-    }
-  }
+  // The chart config was stored by the chart tool during the run -
+  // the model itself never sees it
+  const chart = takeChartConfig(sessionId);
+
 
   const lastMessage = response.messages[response.messages.length - 1];
-  const reply = stripChartConfig(extractText(lastMessage.content)) || '(no reply)';
+  const reply = extractText(lastMessage.content) || '(no reply)';
 
   // extract out the plan from the agent state
   const plan = extractPlan(response.todos);

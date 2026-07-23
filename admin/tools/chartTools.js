@@ -1,41 +1,31 @@
 const { tool } = require('@langchain/core/tools');
 const { z } = require('zod');
 
+// Charts generated during a run, keyed by chat session. The model never sees
+// the config itself, so it cannot echo it into its reply text.
+const chartStore = new Map();
+
 const generateApexChartTool = tool(
-  async ({ type, title, series, categories, xaxisTitle, yaxisTitle }) => {
-    const chartType = type || 'bar';
-    const safeCategories = categories || [];
-    const safeSeries = series || [];
-    const safeTitle = title || 'Chart';
+  async ({ type, title, series, categories, xaxisTitle, yaxisTitle }, config) => {
+    const chartConfig = {
+      chart: { type: type || 'bar', height: 320 },
+      title: { text: title || 'Chart', align: 'center' },
+      series: series || [],
+      xaxis: { categories: categories || [], title: { text: xaxisTitle } },
+      yaxis: { title: { text: yaxisTitle } }
+    };
 
-    let chartConfig;
-
-    if (chartType === 'pie' || chartType === 'donut') {
-      // ApexCharts pie/donut series must be a flat array of numbers with labels
-      let values = safeSeries;
-      if (safeSeries.length > 0 && typeof safeSeries[0] === 'object' && safeSeries[0] !== null) {
-        values = safeSeries[0].data || [];
-      }
-      values = values.filter(v => typeof v === 'number');
-      const labels = safeCategories.length > 0 ? safeCategories : safeSeries.map(s => s.name || '');
-
-      chartConfig = {
-        chart: { type: chartType, height: 320 },
-        title: { text: safeTitle, align: 'center' },
-        series: values,
-        labels: labels,
-      };
-    } else {
-      chartConfig = {
-        chart: { type: chartType, height: 320 },
-        title: { text: safeTitle, align: 'center' },
-        series: safeSeries,
-        xaxis: { categories: safeCategories, title: { text: xaxisTitle } },
-        yaxis: { title: { text: yaxisTitle } }
-      };
+    // The second argument is the run's config, which carries the sessionId
+    // that runAgent passes in via configurable
+    const sessionId = config?.configurable?.sessionId;
+    if (sessionId != null) {
+      chartStore.set(String(sessionId), chartConfig);
     }
 
-    return JSON.stringify({ chartConfig, message: 'Chart generated successfully' });
+    return JSON.stringify({
+      success: true,
+      message: 'Chart generated successfully. It will be rendered automatically in the chat. Do not include any chart data or configuration in your reply.'
+    });
   },
   {
     name: 'generate_apex_chart',
@@ -51,4 +41,12 @@ const generateApexChartTool = tool(
   }
 );
 
-module.exports = { generateApexChartTool };
+// Read and remove the chart for a session, so a stale chart never leaks
+// into the session's next run
+function takeChartConfig(sessionId) {
+  const chart = chartStore.get(String(sessionId));
+  chartStore.delete(String(sessionId));
+  return chart || null;
+}
+
+module.exports = { generateApexChartTool, takeChartConfig };
