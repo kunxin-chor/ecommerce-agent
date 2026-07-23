@@ -1,5 +1,6 @@
 // migrating to LangChain v1 agent
-const { createAgent, todoListMiddleware } = require('langchain');
+const { createAgent, todoListMiddleware, humanInTheLoopMiddleware } = require('langchain');
+const { MemorySaver } = require('@langchain/langgraph');
 const { ChatGoogle } = require('@langchain/google/node');
 
 const {
@@ -47,10 +48,30 @@ const modelWithTools = new ChatGoogle({
   apiKey: process.env.GEMINI_API_KEY,
 }).bindTools(tools);
 
+const checkpointer = new MemorySaver();
+
 const agent = createAgent({
   model,
   tools,
   prompt: 'You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs, image links, or raw chart configuration JSON in your text response — the chart will be rendered automatically by the frontend. Do not describe the chart config JSON in your reply.',
-  middleware: [todoListMiddleware()]
+  middleware: [
+    todoListMiddleware(),
+    humanInTheLoopMiddleware({
+      interruptOn: {
+        create_restock_orders: {
+          allowedDecisions: ['approve', 'reject'],
+          description: (toolCall) => {
+            const lines = toolCall.args.orders.map(
+              (order, index) => `${index + 1}. Product ID **${order.productId}** — **${order.stockAmount}** units`
+            );
+            return '⚠️ **Restock Order' + (lines.length > 1 ? 's' : '') + ' Require Approval**\n\n'
+              + lines.join('\n')
+              + '\n\nType **yes** to approve or **no** to reject.';
+          }
+        }
+      }
+    })
+  ],
+  checkpointer
 });
 module.exports = { model, modelWithTools, agent };

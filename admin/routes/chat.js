@@ -5,7 +5,11 @@ const router = express.Router();
 const ensureAdmin = require('../middlewares/ensureAdmin');
 const { MariaDBChatHistory } = require('../modules/MariaDBHistory');
 const { runAgent } = require('../modules/runAgent');
-const { runAgentStream } = require('../modules/runAgentStream');
+const { runAgentStream, resumeAgentStream } = require('../modules/runAgentStream');
+const { isApproval } = require('../modules/hitl');
+
+// Sessions that are paused waiting for the admin to approve a tool call.
+const pendingApprovals = new Map();
 
 
 router.get('/', ensureAdmin, async (req, res) => {
@@ -111,14 +115,75 @@ router.post('/api/stream', ensureAdmin, express.json(), async (req, res) => {
 
   try {
     // runAgentStream calls sendEvent for each plan/tool_call/tool_result event
-    const { reply, chart } = await runAgentStream(
+    const result = await runAgentStream(
       { input: text },
       { configurable: { sessionId } },
       sendEvent
     );
-    sendEvent('done', { reply, chart });
+
+    // Paused for approval: the needs_approval event was already sent by
+    // runAgentStream. Remember the session, then end the stream — the
+    // remaining progress arrives on a new stream from /api/stream/approve.
+    if (result.interrupted) {
+      pendingApprovals.set(sessionId.toString(), {
+        userText: text,
+        actionCount: result.approval.actionCount
+      });
+    } else {
+      sendEvent('done', { reply: result.reply, chart: result.chart });
+    }
   } catch (error) {
     console.error('Chat error:', error);
+    sendEvent('done', { reply: 'Sorry, something went wrong.' });
+  }
+  res.end();
+});
+
+// Resume a run that was paused waiting for human approval of a tool call.
+router.post('/api/stream/approve', ensureAdmin, express.json(), async (req, res) => {
+  const { message, sessionId } = req.body || {};
+  const text = (message || '').toString().trim();
+  if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
+
+  const pending = pendingApprovals.get(sessionId.toString());
+
+  // Set up Server-Sent Events
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendEvent = (type, data) => {
+    res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+  };
+
+  if (!pending) {
+    sendEvent('done', { reply: 'There is nothing waiting for approval.' });
+    return res.end();
+  }
+
+  // Echo the decision so the user sees it in the progress log
+  sendEvent(isApproval(text) ? 'approved' : 'rejected', {
+    message: isApproval(text) ? '✅ Approved. Continuing...' : '❌ Rejected.'
+  });
+
+  try {
+    const result = await resumeAgentStream({
+      sessionId,
+      approved: isApproval(text),
+      message: text,
+      userText: pending.userText,
+      actionCount: pending.actionCount
+    }, sendEvent);
+
+    // Another tool call needs approval — stay in the approval flow
+    if (result.interrupted) {
+      pending.actionCount = result.approval.actionCount;
+    } else {
+      pendingApprovals.delete(sessionId.toString());
+      sendEvent('done', { reply: result.reply, chart: result.chart });
+    }
+  } catch (error) {
+    console.error('Approve error:', error);
     sendEvent('done', { reply: 'Sorry, something went wrong.' });
   }
   res.end();

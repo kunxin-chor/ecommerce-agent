@@ -35,13 +35,17 @@ async function sendMessageNormal(chatInstance, msg, activeSessionId, renderApexC
 
 // Option 2: streaming. Progress events arrive as the agent works, and we
 // update a single bubble until the final reply replaces it.
-async function sendMessageStreaming(chatInstance, msg, activeSessionId, renderApexChart) {
+async function sendMessageStreaming(chatInstance, msg, activeSessionId, renderApexChart, approval) {
+  // If the agent is paused, this message is the approval decision, not a
+  // new question — send it to the approve endpoint instead
+  const url = approval.waiting ? '/admin/chat/api/stream/approve' : '/admin/chat/api/stream';
+
   // Add a placeholder bubble that we will update as progress events arrive
   const thinkingId = chatInstance.messageAddNew('⏳ Working...', 'bot', 'left', 'bot');
   let steps = [];
 
   try {
-    const res = await fetch('/admin/chat/api/stream', {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg, sessionId: activeSessionId })
@@ -80,7 +84,21 @@ async function sendMessageStreaming(chatInstance, msg, activeSessionId, renderAp
           chatInstance.messageReplaceContent(thinkingId, steps.join('\n\n') + '\n\n⏳ Generating response...');
         }
 
+        if (data.type === 'approved' || data.type === 'rejected') {
+          steps.push(data.message);
+          chatInstance.messageReplaceContent(thinkingId, steps.join('\n\n') + '\n\n⏳ Working...');
+        }
+
+        // The agent paused before a tool call: show the approval request and
+        // wait — the next user message is the yes/no decision
+        if (data.type === 'needs_approval') {
+          approval.waiting = true;
+          steps.push(data.message);
+          chatInstance.messageReplaceContent(thinkingId, steps.join('\n\n'));
+        }
+
         if (data.type === 'done') {
+          approval.waiting = false;
           const replyText = data.reply || '(no reply)';
           chatInstance.messageReplaceContent(thinkingId, replyText);
 
@@ -152,6 +170,10 @@ async function sendMessageStreaming(chatInstance, msg, activeSessionId, renderAp
     }
   }
 
+  // Shared flag: true while the agent is paused waiting for the user to
+  // approve or reject a tool call. The send function reads and updates it.
+  const approval = { waiting: false };
+
   // Create the chat widget using quikchat
   const chat = new quikchat('#admin-chat', async function (chatInstance, msg) {
     // If no session is active, create one automatically
@@ -174,7 +196,7 @@ async function sendMessageStreaming(chatInstance, msg, activeSessionId, renderAp
     // Choose ONE of the two options below — comment out the one you are not using.
     // Both functions handle their own errors, so no try/catch is needed here.
     // await sendMessageNormal(chatInstance, msg, activeSessionId, renderApexChart);
-    await sendMessageStreaming(chatInstance, msg, activeSessionId, renderApexChart);
+    await sendMessageStreaming(chatInstance, msg, activeSessionId, renderApexChart, approval);
 
   });
 
