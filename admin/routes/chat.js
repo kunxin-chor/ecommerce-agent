@@ -5,6 +5,7 @@ const router = express.Router();
 const ensureAdmin = require('../middlewares/ensureAdmin');
 const { MariaDBChatHistory } = require('../modules/MariaDBHistory');
 const { runAgent } = require('../modules/runAgent');
+const { runAgentStream } = require('../modules/runAgentStream');
 
 
 router.get('/', ensureAdmin, async (req, res) => {
@@ -77,7 +78,7 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
     if (!text) return res.json({ reply: 'Please type something.' });
     if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
 
-    console.log("Running agent");
+    console.log("Running agent with sessionId =", sessionId);
     const { reply, chart, plan } = await runAgent(
       { input: text },
       { configurable: { sessionId } }
@@ -88,6 +89,39 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
     console.error('Chat error:', error);
     res.status(500).json({ reply: 'Sorry, something went wrong.' });
   }
+});
+
+// Alternative streaming endpoint: sends progress events as Server-Sent Events
+// instead of waiting for the whole run to finish. Useful for models with
+// reliable streaming support (e.g. OpenAI).
+router.post('/api/stream', ensureAdmin, express.json(), async (req, res) => {
+  const { message, sessionId } = req.body || {};
+  const text = (message || '').toString().trim();
+  if (!text) return res.json({ reply: 'Please type something.' });
+  if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
+
+  // Set up Server-Sent Events
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendEvent = (type, data) => {
+    res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+  };
+
+  try {
+    // runAgentStream calls sendEvent for each plan/tool_call/tool_result event
+    const { reply, chart } = await runAgentStream(
+      { input: text },
+      { configurable: { sessionId } },
+      sendEvent
+    );
+    sendEvent('done', { reply, chart });
+  } catch (error) {
+    console.error('Chat error:', error);
+    sendEvent('done', { reply: 'Sorry, something went wrong.' });
+  }
+  res.end();
 });
 
 module.exports = router;

@@ -10,11 +10,6 @@ function extractText(content) {
   return content ? content.toString() : '';
 }
 
-function stripChartConfig(text) {
-  if (typeof text !== 'string') return text;
-  // Remove any fenced code block that leaks the raw chart configuration object
-  return text.replace(/```(?:json)?\s*[\s\S]*?"chartConfig"[\s\S]*?```/gi, '');
-}
 
 // The todoListMiddleware stores the agent's plan in the state as an array of
 // { content, status } objects. We format it as a markdown list for the chat bubble.
