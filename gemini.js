@@ -68,6 +68,23 @@ const agent = createAgent({
               + lines.join('\n')
               + '\n\nType **yes** to approve or **no** to reject.';
           }
+        },
+        write_todos: {
+          allowedDecisions: ['approve', 'reject'],
+          description: (toolCall) => {
+            const todos = toolCall.args.todos || [];
+            const lines = todos.map((todo, index) => {
+              const icon = todo.status === 'completed' ? '✅' : todo.status === 'in_progress' ? '⏳' : '⏸️';
+              return `${index + 1}. ${icon} ${todo.content}`;
+            });
+            return '📋 **Review Plan**\n\n'
+              + (lines.length ? lines.join('\n') : '(no plan items)')
+              + '\n\nType **yes** to approve this plan, or type your feedback to revise it.';
+          },
+          when: (request) => {
+            // Only pause on the initial plan creation, not later progress updates
+            return !request.state.todos || request.state.todos.length === 0;
+          }
         }
       }
     })
