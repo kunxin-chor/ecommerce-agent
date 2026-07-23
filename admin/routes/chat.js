@@ -77,12 +77,13 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
     if (!text) return res.json({ reply: 'Please type something.' });
     if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
 
-    const { reply, chart } = await runAgent(
+    console.log("Running agent");
+    const { reply, chart, plan } = await runAgent(
       { input: text },
       { configurable: { sessionId } }
     );
 
-    res.json({ reply, chart });
+    res.json({ reply, chart, plan });
   } catch (error) {
     console.error('Chat error:', error);
     res.status(500).json({ reply: 'Sorry, something went wrong.' });

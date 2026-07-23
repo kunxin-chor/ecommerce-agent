@@ -38,45 +38,63 @@ const getProductDetailsTool = tool(
 );
 
 const createRestockOrderTool = tool(
-  async ({ productId, stockAmount }) => {
+  async ({ orders }) => {
     try {
-      const product = await productServices.getProductById(productId);
-      if (!product) return `No product found with ID ${productId}.`;
+      const created = [];
+      const failed = [];
 
-      // Simulated only - we do not make real changes to the database
-      const restockOrder = {
-        orderId: `RESTOCK-${Date.now()}`,
-        productId: product.id,
-        productName: product.name,
-        brand: product.brand,
-        currentStock: product.stock,
-        restockAmount: stockAmount,
-        projectedStock: product.stock + stockAmount,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      };
+      // Process each order one at a time so a bad product ID does not
+      // abort the whole batch - we report the failures at the end instead
+      for (const { productId, stockAmount } of orders) {
+        const product = await productServices.getProductById(productId);
 
-      console.log('[RESTOCK ORDER CREATED]', JSON.stringify(restockOrder, null, 2));
+        if (!product) {
+          failed.push({ productId, reason: `No product found with ID ${productId}.` });
+          continue;
+        }
+
+        // Simulated only - we do not make real changes to the database
+        const restockOrder = {
+          orderId: `RESTOCK-${Date.now()}-${productId}`,
+          productId: product.id,
+          productName: product.name,
+          brand: product.brand,
+          currentStock: product.stock,
+          restockAmount: stockAmount,
+          projectedStock: product.stock + stockAmount,
+          status: 'pending',
+          createdAt: new Date().toISOString()
+        };
+
+        console.log('[RESTOCK ORDER CREATED]', JSON.stringify(restockOrder, null, 2));
+        created.push(restockOrder);
+      }
 
       return JSON.stringify({
-        success: true,
-        message: `Restock order created for ${product.name} (${product.brand})`,
-        order: restockOrder
+        success: failed.length === 0,
+        message: `Created ${created.length} restock order(s)` +
+          (failed.length > 0 ? `, ${failed.length} failed` : ''),
+        created,
+        failed
       });
     } catch (error) {
-      console.error('createRestockOrder error:', error);
-      return 'Error creating restock order.';
+      console.error('createRestockOrders error:', error);
+      return 'Error creating restock orders.';
     }
   },
   {
-    name: 'create_restock_order',
-    description: 'Create a restock order for a product to replenish its inventory. This is a simulation and does not make real changes to the database. Use this when stock levels are low and restocking is needed.',
+    name: 'create_restock_orders',
+    description: 'Create restock orders for one or multiple products in a single call to replenish their inventory. This is a simulation and does not make real changes to the database. Use this when stock levels are low and restocking is needed. Prefer making batch calls over making separate restock calls for each product.',
     schema: z.object({
-      productId: z.number().describe('The ID of the product to restock'),
-      stockAmount: z.number().describe('The amount of stock to order'),
+      orders: z.array(z.object({
+        productId: z.number().describe('The ID of the product to restock'),
+        stockAmount: z.number().describe('The amount of stock to order'),
+      })).describe('The list of restock orders to create'),
     }),
   }
 );
+
+
 
 const getCurrentDateTimeTool = tool(
   async () => {

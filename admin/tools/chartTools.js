@@ -3,13 +3,38 @@ const { z } = require('zod');
 
 const generateApexChartTool = tool(
   async ({ type, title, series, categories, xaxisTitle, yaxisTitle }) => {
-    const chartConfig = {
-      chart: { type: type || 'bar', height: 320 },
-      title: { text: title || 'Chart', align: 'center' },
-      series: series || [],
-      xaxis: { categories: categories || [], title: { text: xaxisTitle } },
-      yaxis: { title: { text: yaxisTitle } }
-    };
+    const chartType = type || 'bar';
+    const safeCategories = categories || [];
+    const safeSeries = series || [];
+    const safeTitle = title || 'Chart';
+
+    let chartConfig;
+
+    if (chartType === 'pie' || chartType === 'donut') {
+      // ApexCharts pie/donut series must be a flat array of numbers with labels
+      let values = safeSeries;
+      if (safeSeries.length > 0 && typeof safeSeries[0] === 'object' && safeSeries[0] !== null) {
+        values = safeSeries[0].data || [];
+      }
+      values = values.filter(v => typeof v === 'number');
+      const labels = safeCategories.length > 0 ? safeCategories : safeSeries.map(s => s.name || '');
+
+      chartConfig = {
+        chart: { type: chartType, height: 320 },
+        title: { text: safeTitle, align: 'center' },
+        series: values,
+        labels: labels,
+      };
+    } else {
+      chartConfig = {
+        chart: { type: chartType, height: 320 },
+        title: { text: safeTitle, align: 'center' },
+        series: safeSeries,
+        xaxis: { categories: safeCategories, title: { text: xaxisTitle } },
+        yaxis: { title: { text: yaxisTitle } }
+      };
+    }
+
     return JSON.stringify({ chartConfig, message: 'Chart generated successfully' });
   },
   {

@@ -75,10 +75,12 @@
       const data = res.data;
 
       const replyText = (data && data.reply) || '(no reply)';
+      const plan = (data && data.plan) || '';
+      const displayText = plan ? `${plan}\n\n${replyText}` : replyText;
 
       // Add bot text reply and capture its message ID
       const replyId = chatInstance.messageAddNew(
-        replyText,
+        displayText,
         'bot',
         'left',
         'bot'

@@ -50,7 +50,7 @@ const modelWithTools = new ChatGoogle({
 const agent = createAgent({
   model,
   tools,
-  prompt: 'You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs or image links in your text response — the chart will be rendered automatically by the frontend.',
+  prompt: 'You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs, image links, or raw chart configuration JSON in your text response — the chart will be rendered automatically by the frontend. Do not describe the chart config JSON in your reply.',
   middleware: [todoListMiddleware()]
 });
 module.exports = { model, modelWithTools, agent };
