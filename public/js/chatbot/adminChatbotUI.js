@@ -52,17 +52,7 @@
     }
 
     async handleMessage(chatInstance, msg) {
-      if (!this.activeSessionId) {
-        try {
-          const r = await axios.post('/admin/chat/sessions');
-          this.activeSessionId = r.data.sessionId;
-          window.history.pushState({}, '', `/admin/chat?session=${this.activeSessionId}`);
-        } catch (err) {
-          console.error('Error creating chat session', err);
-          chatInstance.messageAddNew('Error creating chat session.', 'bot', 'left', 'bot');
-          return;
-        }
-      }
+      if (!await this._ensureActiveSession(chatInstance)) return;
 
       chatInstance.messageAddNew(msg, 'me', 'right', 'user');
 
@@ -72,18 +62,37 @@
           sessionId: this.activeSessionId,
           thinking: this.thinking,
         });
-        const data = res.data;
-
-        const replyMarkdown = this.replyBuilder.renderText(data);
-        const replyId = chatInstance.messageAddNew(replyMarkdown, 'bot', 'left', 'bot');
-
-        if (this.replyBuilder.hasChart(data) && replyId != null) {
-          const msgNode = chatInstance.messageGetDOMObject(replyId);
-          this.chartRenderer.render(msgNode, data.chart);
-        }
+        this._renderReply(chatInstance, res.data);
       } catch (err) {
         console.error('Error calling /admin/chat/api', err);
         chatInstance.messageAddNew('Error contacting server.', 'bot', 'left', 'bot');
+      }
+    }
+
+    // Creates a chat session on first use. Returns false (and shows an error
+    // bubble) if the session could not be created.
+    async _ensureActiveSession(chatInstance) {
+      if (this.activeSessionId) return true;
+      try {
+        const r = await axios.post('/admin/chat/sessions');
+        this.activeSessionId = r.data.sessionId;
+        window.history.pushState({}, '', `/admin/chat?session=${this.activeSessionId}`);
+        return true;
+      } catch (err) {
+        console.error('Error creating chat session', err);
+        chatInstance.messageAddNew('Error creating chat session.', 'bot', 'left', 'bot');
+        return false;
+      }
+    }
+
+    // Renders a completed { reply, chart, plan, thoughts } payload as a bot bubble
+    _renderReply(chatInstance, data) {
+      const replyMarkdown = this.replyBuilder.renderText(data);
+      const replyId = chatInstance.messageAddNew(replyMarkdown, 'bot', 'left', 'bot');
+
+      if (this.replyBuilder.hasChart(data) && replyId != null) {
+        const msgNode = chatInstance.messageGetDOMObject(replyId);
+        this.chartRenderer.render(msgNode, data.chart);
       }
     }
 
