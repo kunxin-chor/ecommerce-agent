@@ -1,0 +1,155 @@
+(function () {
+  'use strict';
+
+  class AdminChatbotUI {
+    constructor(containerSelector, options = {}) {
+      this.container = document.querySelector(containerSelector);
+      if (!this.container) {
+        throw new Error(`AdminChatbotUI: container "${containerSelector}" not found`);
+      }
+
+      if (typeof quikchat !== 'function') {
+        throw new Error('AdminChatbotUI: quikchat library is not loaded');
+      }
+
+      this.activeSessionId = this._parseActiveSessionId();
+      this.initialHistory = this._parseInitialHistory();
+      this.replyBuilder = options.replyBuilder || new window.ChatbotReplyBuilder();
+      this.chartRenderer = options.chartRenderer || new window.ApexChartRenderer();
+      this.chatInstance = null;
+
+      this._init();
+    }
+
+    async createSession() {
+      try {
+        const r = await axios.post('/admin/chat/sessions');
+        const sessionId = r.data && r.data.sessionId;
+        if (!sessionId) {
+          throw new Error('Server did not return a session id');
+        }
+        window.location.href = `/admin/chat?session=${sessionId}`;
+      } catch (err) {
+        console.error('Error creating chat session', err);
+      }
+    }
+
+    async deleteSession(sessionId) {
+      if (!sessionId) return;
+      try {
+        await axios.post(`/admin/chat/sessions/${sessionId}/delete`);
+      } catch (err) {
+        console.error('Error deleting chat session', err);
+        return;
+      }
+
+      if (parseInt(sessionId, 10) === this.activeSessionId) {
+        window.location.href = '/admin/chat';
+      } else {
+        window.location.reload();
+      }
+    }
+
+    async handleMessage(chatInstance, msg) {
+      if (!this.activeSessionId) {
+        try {
+          const r = await axios.post('/admin/chat/sessions');
+          this.activeSessionId = r.data.sessionId;
+          window.history.pushState({}, '', `/admin/chat?session=${this.activeSessionId}`);
+        } catch (err) {
+          console.error('Error creating chat session', err);
+          chatInstance.messageAddNew('Error creating chat session.', 'bot', 'left', 'bot');
+          return;
+        }
+      }
+
+      chatInstance.messageAddNew(msg, 'me', 'right', 'user');
+
+      try {
+        const res = await axios.post('/admin/chat/api', {
+          message: msg,
+          sessionId: this.activeSessionId,
+        });
+        const data = res.data;
+
+        const replyMarkdown = this.replyBuilder.renderText(data);
+        const replyId = chatInstance.messageAddNew(replyMarkdown, 'bot', 'left', 'bot');
+
+        if (this.replyBuilder.hasChart(data) && replyId != null) {
+          const msgNode = chatInstance.messageGetDOMObject(replyId);
+          this.chartRenderer.render(msgNode, data.chart);
+        }
+      } catch (err) {
+        console.error('Error calling /admin/chat/api', err);
+        chatInstance.messageAddNew('Error contacting server.', 'bot', 'left', 'bot');
+      }
+    }
+
+    _parseInitialHistory() {
+      const script = document.getElementById('initialHistory');
+      if (!script || !script.textContent) return [];
+      try {
+        const parsed = JSON.parse(script.textContent);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        console.error('Failed to parse initial history JSON', e);
+        return [];
+      }
+    }
+
+    _parseActiveSessionId() {
+      const script = document.getElementById('activeSessionId');
+      if (!script || !script.textContent) return null;
+      try {
+        return JSON.parse(script.textContent);
+      } catch (e) {
+        console.error('Failed to parse active session ID', e);
+        return null;
+      }
+    }
+
+    _seedHistory() {
+      if (!Array.isArray(this.initialHistory) || this.initialHistory.length === 0) return;
+
+      this.initialHistory.forEach((item) => {
+        if (!item || !item.text) return;
+        const msgId = this.chatInstance.messageAddNew(
+          item.text,
+          item.role,
+          item.side,
+          item.role
+        );
+
+        if (item.chart && msgId != null) {
+          const msgNode = this.chatInstance.messageGetDOMObject(msgId);
+          this.chartRenderer.render(msgNode, item.chart);
+        }
+      });
+    }
+
+    _bindSessionControls() {
+      const newChatBtn = document.getElementById('newChatBtn');
+      if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => this.createSession());
+      }
+
+      document.querySelectorAll('.delete-session-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.deleteSession(btn.dataset.sessionId);
+        });
+      });
+    }
+
+    _init() {
+      this.chatInstance = new quikchat(this.container, (chatInstance, msg) => {
+        this.handleMessage(chatInstance, msg);
+      });
+
+      this._seedHistory();
+      this._bindSessionControls();
+    }
+  }
+
+  window.AdminChatbotUI = AdminChatbotUI;
+})();
