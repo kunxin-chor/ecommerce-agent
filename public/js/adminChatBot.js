@@ -74,13 +74,21 @@
       const res = await axios.post('/admin/chat/api', { message: msg, sessionId: activeSessionId });
       const data = res.data;
 
-      const replyText = (data && data.reply) || '(no reply)';
-      const plan = (data && data.plan) || '';
-      const displayText = plan ? `${plan}\n\n${replyText}` : replyText;
+        const replyText = (data && data.reply) || '(no reply)';
+
+      // Build the bubble in sections: plan, reasoning, then the reply
+      const sections = [];
+      console.log(data);
+      if (data && data.plan) sections.push(data.plan);
+      if (data && data.thoughts && data.thoughts.length) {
+        console.log(data);
+        sections.push('💭 **Reasoning:**\n' + data.thoughts.map(t => `- *${t}*`).join('\n'));
+      }
+      sections.push(replyText);
 
       // Add bot text reply and capture its message ID
       const replyId = chatInstance.messageAddNew(
-        displayText,
+        sections.join('\n\n---\n\n'),
         'bot',
         'left',
         'bot'

@@ -2,6 +2,7 @@ const { HumanMessage } = require('@langchain/core/messages');
 const { agent } = require('../../gemini');
 const { MariaDBChatHistory } = require('./MariaDBHistory');
 const { takeChartConfig } = require('../tools/chartTools');
+const { takeThoughts} = require('./thoughts');
 
 function extractText(content) {
   if (Array.isArray(content)) {
@@ -56,11 +57,9 @@ async function runAgent(input, config) {
     throw error;  // Some other error — let the route's error handler deal with it
   }
 
-
   // The chart config was stored by the chart tool during the run -
   // the model itself never sees it
   const chart = takeChartConfig(sessionId);
-
 
   const lastMessage = response.messages[response.messages.length - 1];
   const reply = extractText(lastMessage.content) || '(no reply)';
@@ -68,11 +67,14 @@ async function runAgent(input, config) {
   // extract out the plan from the agent state
   const plan = extractPlan(response.todos);
   console.log("plan =", plan);
+  
+  // Thoughts are display-only: drain them from the store, but do NOT save them to history
+  const thoughts = takeThoughts(sessionId);
 
   await history.addUserMessage(input.input);
   await history.addAIChatMessage(reply, chart);
 
-  return { reply, chart, plan };
+  return { reply, chart, plan, thoughts };
 }
 
 module.exports = { runAgent };
