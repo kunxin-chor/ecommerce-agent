@@ -1,8 +1,11 @@
 # Human-in-the-Loop: Approving Tool Calls Before They Run (Streaming)
 
-So far, our agent can call any of its tools as soon as the model decides to. For most tools this is fine — reading sales data or drawing a chart cannot hurt anything. But `create_restock_orders` simulates placing orders with a supplier. For actions like this, we want a human to confirm before the tool runs.
+So far, our agent can call any of its tools as soon as the model decides to. For most tools this is fine — reading sales data or drawing a chart cannot hurt anything. But some actions should not run without a human check:
 
-In this chapter, we will add human-in-the-loop (HITL) approval to our agent. When the agent wants to create restock orders, it will pause, show us the orders in the chat, and wait. The run only continues after we type **yes** or **no**.
+- `create_restock_orders` simulates placing orders with a supplier.
+- `write_todos` is how the agent builds its plan for multi-step tasks.
+
+For actions like these, we want a human to confirm before the tool runs. In this chapter, we will add human-in-the-loop (HITL) approval to our agent. When the agent wants to create restock orders or commit to a plan, it will pause, show us the details in the chat, and wait. The run only continues after we type **yes** or **no** (or feedback that revises the plan).
 
 We will build this on the streaming version of our chat — the one where progress events arrive as Server-Sent Events while the agent works.
 
@@ -53,6 +56,23 @@ const agent = createAgent({
               + lines.join('\n')
               + '\n\nType **yes** to approve or **no** to reject.';
           }
+        },
+        write_todos: {
+          allowedDecisions: ['approve', 'reject'],
+          description: (toolCall) => {
+            const todos = toolCall.args.todos || [];
+            const lines = todos.map((todo, index) => {
+              const icon = todo.status === 'completed' ? '✅' : todo.status === 'in_progress' ? '⏳' : '⏸️';
+              return `${index + 1}. ${icon} ${todo.content}`;
+            });
+            return '📋 **Review Plan**\n\n'
+              + (lines.length ? lines.join('\n') : '(no plan items)')
+              + '\n\nType **yes** to approve this plan, or type your feedback to revise it.';
+          },
+          when: (request) => {
+            // Only interrupt on the initial plan creation, not later progress updates
+            return !request.state.todos || request.state.todos.length === 0;
+          }
         }
       }
     })
@@ -64,9 +84,10 @@ const agent = createAgent({
 Here's what the new parts do:
 
 - `MemorySaver` keeps the agent's state in the server's memory, keyed by a `thread_id` that we will supply. It is the simplest checkpointer — fine for development. Since it lives in memory, a server restart forgets all paused runs; for production you would swap in a database-backed checkpointer without changing any other code.
-- `interruptOn` lists which tools need approval. We only list `create_restock_orders`; every other tool runs immediately as before.
+- `interruptOn` lists which tools need approval. We list `create_restock_orders` and `write_todos`; every other tool runs immediately as before.
 - `allowedDecisions` restricts what the human can say. We allow `approve` and `reject`. (LangChain also supports an `edit` decision, where the human rewrites the tool arguments before the call — we don't need it here.)
-- `description` builds the message shown to the user. Recall that our `create_restock_orders` tool takes a batch: `orders` is an array of `{ productId, stockAmount }`. We format one line per order so the admin sees exactly what will be placed. Note this description is a **markdown** string — our chat widget renders markdown, so the bold text and line breaks will display properly.
+- `description` builds the message shown to the user. For `create_restock_orders`, we format one line per order so the admin sees exactly what will be placed. For `write_todos`, we render each planned step with a status icon and ask the admin to approve or give feedback. Note these descriptions are **markdown** strings — our chat widget renders markdown, so the bold text and line breaks display properly.
+- `when` on `write_todos` is a predicate that decides whether to pause. It only returns `true` when the agent state's `todos` array is empty — that is the initial plan. After the plan is approved, the state holds the todo list, so later updates (marking items `in_progress` or `completed`) auto-approve.
 
 We keep the batch tool as it is. One approval covers the whole batch, which matches how the agent was already prompted to work.
 
@@ -427,7 +448,20 @@ Finally, pass the flag in the quikchat callback:
 
 One small thing that makes this work nicely: the approve endpoint emits the same event types as the normal stream — `tool_call`, `tool_result`, possibly another `needs_approval`, and finally `done`. That is why one reading loop handles both URLs with no special cases.
 
-## Step 6: Testing the Approval Flow
+## Step 6: Reviewing and Revising the Plan
+
+The same HITL machinery can pause the agent before it commits to a plan. The `todoListMiddleware` adds a `write_todos` tool that the agent uses to organize multi-step work. We added that tool to `interruptOn` in Step 1, so now the admin sees the plan before the agent starts executing it.
+
+Why only interrupt on the first `write_todos`? Because the agent updates the todo list as it works — marking items `in_progress` and `completed`. We do not want to pause on every status update. The `when` predicate checks the agent state: if `state.todos` is empty, this is the initial plan; otherwise it is an update and we auto-approve.
+
+The approval flow works exactly like the restock approval flow:
+
+- `yes` → `approve` → the plan is saved and the agent proceeds.
+- Any other text → `reject` with the text as feedback → the model sees the rejection, rewrites the plan, and pauses again.
+
+No other code changes are needed. The `needs_approval` event, the `/api/stream/approve` route, and the frontend `approval.waiting` flag all handle the plan review the same way they handle restock orders.
+
+## Step 7: Testing the Approval Flow
 
 Restart the server and open the admin chat:
 
@@ -443,10 +477,22 @@ Restart the server and open the admin chat:
 
 4. Type `yes`. A new stream starts, the tool executes, and the final reply appears.
 5. Ask for another restock, but this time type `no`. The agent should come back with a reply acknowledging that the restock was rejected — it should **not** create the orders.
+6. Now test plan review. Type a multi-step request that makes the agent use its todo list, such as: `Create restock orders for the low-stock products, 50 units each, and also show me a chart of last month's sales.`
+7. Watch the progress bubble. It should pause at the plan before any tools run:
+
+   > 📋 **Review Plan**
+   > 1. ⏳ Find low-stock products
+   > 2. ⏸️ Create restock orders for each product
+   > 3. ⏸️ Generate a sales chart
+   >
+   > Type **yes** to approve this plan, or type your feedback to revise it.
+
+8. Type feedback, for example: `skip the chart`. The agent should reject the plan, revise it, and pause again with the updated plan. Type `yes` to approve the revised plan, and the run should proceed.
 
 A few things can go wrong, and each has a distinctive symptom:
 
-- **The agent never pauses and the tool just runs.** The middleware is not seeing the tool name. Check that the key in `interruptOn` is exactly `create_restock_orders` — it must match the `name` in the tool definition, not the JavaScript variable name.
+- **The agent never pauses and the tool just runs.** The middleware is not seeing the tool name. Check that the key in `interruptOn` is exactly `create_restock_orders` or `write_todos` — it must match the `name` in the tool definition, not the JavaScript variable name.
+- **For plan review, the agent pauses the first time but never pauses again after feedback.** The `when` predicate is not correctly checking the initial state. Make sure it returns `true` only when `request.state.todos` is empty or missing.
 - **The pause works, but the answer to it starts a brand-new run.** The `approval.waiting` flag is not being set or not being passed. Check that `sendMessageStreaming` receives the `approval` object.
 - **Error: "No checkpointer set".** You added `humanInTheLoopMiddleware` but forgot the `checkpointer` option in `createAgent`. Interrupts cannot work without one.
 - **The model repeats itself or the context grows strangely.** You are sending the full history on every message even though the checkpointer has the thread. Revisit the `isThreadKnown` rule from Step 2.
@@ -457,15 +503,17 @@ A few things can go wrong, and each has a distinctive symptom:
 Let's recap what we built:
 
 - A checkpointer (`MemorySaver`) plus `humanInTheLoopMiddleware`, so the agent can freeze before running `create_restock_orders`.
+- The same middleware also freezes the agent on the first `write_todos` call, letting the admin review and revise the plan before execution.
 - A shared `hitl.js` module for the thread config, the interrupt check, and the resume command.
 - Interrupt handling in the streaming runner, with history saved only after the human decides.
 - A `/api/stream/approve` route that resumes the paused run as a new event stream, with the pending state kept server-side.
 - A frontend that treats the message after a pause as a decision.
 
-The same pattern extends to any tool you consider dangerous — deleting data, sending emails, charging cards. Add the tool name to `interruptOn`, and it joins the approval flow with no other changes.
+The same pattern extends to any tool you consider dangerous — deleting data, sending emails, charging cards, or even writing a plan. Add the tool name to `interruptOn`, and it joins the approval flow with no other changes.
 
 ## Exercises
 
 1. Add an `edit` decision to `allowedDecisions`, and let the admin change `stockAmount` before approving. What extra UI would you need to collect the new amount?
 2. Right now, rejecting sends the model a generic message. Modify the flow so the admin can type a reason (for example, `no, wait until the end of the month`) and have the model take it into account.
 3. Replace `MemorySaver` with a database-backed checkpointer (for example, the LangGraph Postgres saver). Which parts of this chapter's code still work unchanged?
+4. For plan review, what happens if the admin keeps rejecting the plan with contradictory feedback? How could you prevent the agent from looping forever?

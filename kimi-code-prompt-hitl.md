@@ -3,14 +3,14 @@
 Copy everything inside the code block below into Kimi Code. It assumes you are on the `06c-streaming` branch of the `ecommerce-agent` repo.
 
 ````
-Add human-in-the-loop (HITL) approval to this project. When the agent wants to call the `create_restock_orders` tool, it must pause, show the pending orders in the admin chat, and wait for the admin to type yes or no. The run resumes only after the decision. Implement this for the streaming path only (`runAgentStream` + `/api/stream`). Keep the existing code design and UI — do not restructure anything else.
+Add human-in-the-loop (HITL) approval to this project. When the agent wants to call the `create_restock_orders` tool or the first `write_todos` plan, it must pause, show the pending orders or plan in the admin chat, and wait for the admin to type yes or no (or feedback to revise the plan). The run resumes only after the decision. Implement this for the streaming path only (`runAgentStream` + `/api/stream`). Keep the existing code design and UI — do not restructure anything else.
 
 ## Background
 
 - The agent is defined in `gemini.js` using `createAgent` from LangChain v1 with `todoListMiddleware()`.
 - The streaming runner is `admin/modules/runAgentStream.js`; routes are in `admin/routes/chat.js`; the frontend is `public/js/adminChatBot.js` (quikchat widget).
 - Chat history is persisted in MariaDB via `admin/modules/MariaDBHistory.js`. The chart config is stored server-side via `takeChartConfig(sessionId)` from `admin/tools/chartTools.js`.
-- The tool that needs approval is `create_restock_orders` (batch tool, args: `{ orders: [{ productId, stockAmount }] }`).
+- The tools that need approval are `create_restock_orders` (batch tool, args: `{ orders: [{ productId, stockAmount }] }`) and `write_todos` (the agent's planner, args: `{ todos: [{ content, status }] }`). Only interrupt on the first `write_todos` call (when the agent state has no todos yet).
 
 ## Step 1: gemini.js
 
@@ -31,6 +31,20 @@ humanInTheLoopMiddleware({
           + lines.join('\n')
           + '\n\nType **yes** to approve or **no** to reject.';
       }
+    },
+    write_todos: {
+      allowedDecisions: ['approve', 'reject'],
+      description: (toolCall) => {
+        const todos = toolCall.args.todos || [];
+        const lines = todos.map((todo, index) => {
+          const icon = todo.status === 'completed' ? '✅' : todo.status === 'in_progress' ? '⏳' : '⏸️';
+          return `${index + 1}. ${icon} ${todo.content}`;
+        });
+        return '📋 **Review Plan**\n\n'
+          + (lines.length ? lines.join('\n') : '(no plan items)')
+          + '\n\nType **yes** to approve this plan, or type your feedback to revise it.';
+      },
+      when: (request) => !request.state.todos || request.state.todos.length === 0
     }
   }
 })
@@ -207,6 +221,8 @@ Refactor so the streaming loop lives in a shared internal function, then add a r
 2. "Which products are low on stock?" → normal answer, no approval.
 3. "Create restock orders for the low-stock products, 50 units each." → progress bubble stops at an approval request listing the orders.
 4. Type `yes` → run resumes, tool executes, final reply appears. Ask again and type `no` → agent acknowledges the rejection and does NOT create orders.
+5. "Create restock orders for the low-stock products, 50 units each, and also show me a chart of last month's sales." → progress bubble stops at a plan review.
+6. Type `yes` → plan is saved, run proceeds. Or type feedback (e.g. "skip the chart") → agent revises the plan and pauses again; type `yes` to approve the revised plan.
 ````
 
 ## Notes on using this prompt
