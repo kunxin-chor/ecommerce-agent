@@ -72,7 +72,7 @@ router.post('/sessions/:id/delete', ensureAdmin, async (req, res) => {
 
 router.post('/api', ensureAdmin, express.json(), async (req, res) => {
   try {
-    const { message, sessionId } = req.body || {};
+    const { message, sessionId, thinking } = req.body || {};
     const text = (message || '').toString().trim();
     if (!text) return res.json({ reply: 'Please type something.' });
     if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
@@ -80,7 +80,8 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
     console.log("Running agent");
     const { reply, chart, plan, thoughts } = await runAgent(
       { input: text },
-      { configurable: { sessionId } }
+      { configurable: { sessionId } },
+      thinking 
     );
 
     res.json({ reply, chart, plan, thoughts });

@@ -17,6 +17,7 @@
       this.replyBuilder = options.replyBuilder || new window.ChatbotReplyBuilder();
       this.chartRenderer = options.chartRenderer || new window.ApexChartRenderer();
       this.chatInstance = null;
+      this.thinking = true;
 
       this._init();
     }
@@ -69,6 +70,7 @@
         const res = await axios.post('/admin/chat/api', {
           message: msg,
           sessionId: this.activeSessionId,
+          thinking: this.thinking,
         });
         const data = res.data;
 
@@ -141,11 +143,33 @@
       });
     }
 
+    _createThinkingToggle() {
+      const inputArea = this.container.querySelector('.quikchat-input-area');
+      if (!inputArea) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'd-flex align-items-center ms-2';
+      wrapper.innerHTML = `
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="thinkingToggle" checked>
+          <label class="form-check-label" for="thinkingToggle" style="font-size: 0.85rem; white-space: nowrap;">Thinking</label>
+        </div>
+      `;
+
+      const toggle = wrapper.querySelector('#thinkingToggle');
+      toggle.addEventListener('change', () => {
+        this.thinking = toggle.checked;
+      });
+
+      inputArea.appendChild(wrapper);
+    }
+
     _init() {
       this.chatInstance = new quikchat(this.container, (chatInstance, msg) => {
         this.handleMessage(chatInstance, msg);
       });
 
+      this._createThinkingToggle();
       this._seedHistory();
       this._bindSessionControls();
     }

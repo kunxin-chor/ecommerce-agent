@@ -1,5 +1,5 @@
 const { HumanMessage } = require('@langchain/core/messages');
-const { agent } = require('../../gemini');
+const { agent, thinkingAgent } = require('../../gemini');
 const { MariaDBChatHistory } = require('./MariaDBHistory');
 const { takeChartConfig } = require('../tools/chartTools');
 const { takeThoughts} = require('./thoughts');
@@ -31,16 +31,19 @@ function isRecursionLimitError(error) {
   return error && error.lc_error_code === 'GRAPH_RECURSION_LIMIT';
 }
 
-async function runAgent(input, config) {
+async function runAgent(input, config, thinking=false) {
   const { sessionId } = config.configurable;
   const history = new MariaDBChatHistory(sessionId);
   const pastMessages = await history.getMessages();
   let response;
 
+  // switch between thinking agent or non-thinking agent
+  const activeAgent = thinking ? thinkingAgent : agent;
+
   try {
     // The agent runs the full tool-calling loop internally.
     // 25 steps (the default) is not enough once planning is involved.
-    response = await agent.invoke(
+    response = await activeAgent.invoke(
       { messages: [...pastMessages, new HumanMessage(input.input)] },
       { ...config, recursionLimit: 50 }
     );

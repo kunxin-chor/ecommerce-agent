@@ -59,6 +59,20 @@ const agent = createAgent({
   Do not describe the chart config JSON in your reply.
   For any request that involves two or more distinct actions, you MUST call write_todos to create a plan before calling any other tool — even if you already know what you will do.
   `,
+  middleware: [todoListMiddleware()]
+});
+
+const thinkingAgent = createAgent({
+  model,
+  tools,
+  prompt: `You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. 
+  When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs, image links, or raw chart configuration JSON in your text response. 
+  The chart will be rendered automatically by the frontend. 
+  Do not describe the chart config JSON in your reply.
+  For any request that involves two or more distinct actions, you MUST call write_todos to create a plan before calling any other tool — even if you already know what you will do.
+  `,
   middleware: [todoListMiddleware(), thoughtMiddleware]
 });
-module.exports = { model, modelWithTools, agent };
+
+
+module.exports = { model, modelWithTools, agent, thinkingAgent };
