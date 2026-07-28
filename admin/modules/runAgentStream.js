@@ -125,11 +125,20 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
 
     processThoughts();
 
-    if (eventType === 'on_chat_model_stream') {
+    if (eventType === 'on_chat_model_start') {
+      processChatModelStart();
+    }
+    else if (eventType === 'on_chat_model_stream') {
       processTokens(data);
     } 
     else if (eventType === 'on_chain_stream') {
-      processPlan(data);
+      if (data.chunk) {
+        if (data.chunk.todos) processPlan(data.chunk.todos);
+        if (data.chunk.messages) processStateMessages(data.chunk.messages);
+      }
+    }
+    else if (eventType === 'on_chat_model_end') {
+      processChatModelEnd(data);
     }
     else if (eventType === 'on_tool_start') {
       processToolStart(name);
@@ -146,28 +155,77 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
     }
   }
 
+  const processChatModelStart = () => {
+    // Reset the accumulator for the new turn.
+    // Like runAgentStreamFinal, we only want the content of the turn 
+    // that eventually becomes the final human-readable reply.
+    lastAgentContent = '';
+  }
+
   const processTokens = (data) => {
     const chunk = data.chunk;
-    if (chunk.content && (!chunk.tool_call_chunks || chunk.tool_call_chunks.length === 0)) {
-      const text = typeof chunk.content === 'string' 
-        ? chunk.content 
-        : chunk.content.map(p => p.text || '').join('');
+    // Gemini includeThoughts: true sends thoughts as content parts in the stream.
+    if (chunk.content) {
+      const hasToolCalls = chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0;
+      let text = '';
+      
+      if (typeof chunk.content === 'string') {
+        if (!hasToolCalls) text = chunk.content;
+      } else if (Array.isArray(chunk.content)) {
+        for (const part of chunk.content) {
+          if (part.thought === true) {
+            if (part.text) onEvent('chunk', { text: `\n\n💭 *${part.text}*` });
+          } else if (!hasToolCalls) {
+            text += (part.text || '');
+          }
+        }
+      }
       
       if (text) {
         onEvent('chunk', { text });
-        lastAgentContent = (lastAgentContent || '') + text;
+        if (typeof lastAgentContent !== 'string') lastAgentContent = '';
+        lastAgentContent += text;
       }
     }
   }
 
-  const processPlan = (data) => {
-    if (data.chunk && data.chunk.todos) {
-      todos = data.chunk.todos;
-      if (!planStreamed) {
-        planStreamed = true;
-        const planText = extractPlan(todos);
-        if (planText) onEvent('chunk', { text: '\n\n' + planText });
+  const processPlan = (newTodos) => {
+    todos = newTodos;
+    if (!planStreamed) {
+      planStreamed = true;
+      const planText = extractPlan(todos);
+      if (planText) onEvent('chunk', { text: '\n\n' + planText });
+    }
+  }
+
+  const processStateMessages = (messages) => {
+    // Find the last AI message that doesn't have tool calls. 
+    // This is the most likely candidate for the final human response.
+    const lastAiMsg = [...messages].reverse().find(m => 
+      m._getType() === 'ai' && (!m.tool_calls || m.tool_calls.length === 0)
+    );
+
+    if (lastAiMsg) {
+      const content = extractText(lastAiMsg.content);
+      // If our token accumulator is significantly shorter than the state's content,
+      // it means we missed some tokens during the stream.
+      if (!lastAgentContent || content.length > lastAgentContent.length) {
+        lastAgentContent = content;
       }
+    }
+  }
+
+  const processChatModelEnd = (data) => {
+    // This fires when a model turn completes. 
+    // If the turn had no tool calls, it's a 'human' response part.
+    const output = data.output;
+    if (output && output.tool_calls?.length === 0) {
+      const text = extractText(output.content);
+      // We've already been accumulating tokens in processTokens, 
+      // so we don't need to do anything here unless we want to 
+      // 'correct' the accumulation with the final clean text.
+      // But we must be careful not to overwrite the WHOLE conversation 
+      // if this was just one turn of many.
     }
   }
 
