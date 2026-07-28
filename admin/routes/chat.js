@@ -5,6 +5,7 @@ const router = express.Router();
 const ensureAdmin = require('../middlewares/ensureAdmin');
 const { MariaDBChatHistory } = require('../modules/MariaDBHistory');
 const { runAgent } = require('../modules/runAgent');
+const { runAgentStream } = require('../modules/runAgentStream');
 
 
 router.get('/', ensureAdmin, async (req, res) => {
@@ -88,6 +89,44 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
   } catch (error) {
     console.error('Chat error:', error);
     res.status(500).json({ reply: 'Sorry, something went wrong.' });
+  }
+});
+
+// Streaming version of POST /api: same request body, but the response is a
+// Server-Sent Events stream instead of one JSON object
+router.post('/api/stream', ensureAdmin, express.json(), async (req, res) => {
+  const { message, sessionId, thinking } = req.body || {};
+  const text = (message || '').toString().trim();
+
+  // Validate BEFORE starting the stream, so these still come back as plain JSON
+  if (!text) return res.json({ reply: 'Please type something.' });
+  if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
+
+  // From this point on, the response is an event stream
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // One SSE frame: an event line, a data line, and a blank line to end it
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const result = await runAgentStream(
+      { input: text },
+      { configurable: { sessionId } },
+      thinking,
+      sendEvent
+    );
+    sendEvent('done', result);
+  } catch (error) {
+    console.error('Chat stream error:', error);
+    sendEvent('error', { reply: 'Sorry, something went wrong.' });
+  } finally {
+    res.end();
   }
 });
 

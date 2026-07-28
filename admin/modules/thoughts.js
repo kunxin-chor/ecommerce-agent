@@ -62,6 +62,12 @@ function takeThoughts(sessionId) {
   return t || [];
 }
 
+// Read the thoughts WITHOUT removing them, so runAgentStream can stream
+// them out as they arrive while takeThoughts still drains them at the end
+function peekThoughts(sessionId) {
+  return thoughtStore.get(String(sessionId)) || [];
+}
+
 module.exports = {
-    thoughtMiddleware, takeThoughts,
+    thoughtMiddleware, takeThoughts, peekThoughts,
 }

@@ -16,7 +16,7 @@
       try {
         // fetch (not axios): axios buffers the whole response in the browser,
         // while fetch lets us read the body as a stream
-        res = await fetch('/admin/chat/api', {
+        res = await fetch('/admin/chat/api/stream', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
