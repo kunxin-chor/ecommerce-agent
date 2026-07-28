@@ -34,12 +34,18 @@ const generateApexChartTool = tool(
 
     return JSON.stringify({
       success: true,
-      message: 'Chart generated successfully. It will be rendered automatically in the chat. Do not include any chart data or configuration in your reply.'
+      message: 'Chart generated successfully. It will be rendered automatically in the chat. Do not include any chart data or configuration JSON in your reply.'
     });
   },
   {
     name: 'generate_apex_chart',
-    description: 'Generate an ApexCharts configuration for data visualization. Use this when the user asks for a chart, graph, or visual representation of data.\n\nExpected shapes by chart type:\n- bar / line: series = [{ name: string, data: number[] }]; categories = string[] (x-axis labels).\n- pie / donut: series = number[] (one value per slice); categories = string[] (slice labels).',
+    description: `Generate an ApexCharts configuration for data visualization. Use this when the user asks for a chart, graph, or visual representation of data.
+    
+    When calling this tool, here are the expected shapes by chart type:- bar / line: series = [{ name: string, data: number[] }]; categories = string[] (x-axis labels).- pie / donut: series = number[] (one value per slice); categories = string[] (slice labels).
+    Do not output or return the shape of the chart. It will be automatically handled.    
+    Do not return or output any generated JSON.
+    
+    `,
     schema: z.object({
       type: z.enum(['bar', 'line', 'pie', 'donut']).describe('Chart type'),
       title: z.string().describe('Chart title'),
