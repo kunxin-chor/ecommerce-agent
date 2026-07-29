@@ -6,6 +6,8 @@ const ensureAdmin = require('../middlewares/ensureAdmin');
 const { MariaDBChatHistory } = require('../modules/MariaDBHistory');
 const { runAgent } = require('../modules/runAgent');
 const { runAgentStream } = require('../modules/runAgentStream');
+const { hasPendingApproval, parseDecision } = require('../modules/approval');
+const { resumeAgent } = require('../modules/runAgent');
 
 
 router.get('/', ensureAdmin, async (req, res) => {
@@ -78,11 +80,20 @@ router.post('/api', ensureAdmin, express.json(), async (req, res) => {
     if (!text) return res.json({ reply: 'Please type something.' });
     if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
 
+    if (hasPendingApproval(sessionId)) {
+      const decisions = parseDecision(text);
+      if (!decisions) {
+        return res.json({ reply: 'Please reply *yes* to approve or *no* to reject.' });
+      }
+      const result = await resumeAgent(sessionId, decisions);
+      return res.json(result);
+    }
+
     console.log("Running agent");
     const { reply, chart, plan, thoughts } = await runAgent(
       { input: text },
       { configurable: { sessionId } },
-      thinking 
+      thinking
     );
 
     res.json({ reply, chart, plan, thoughts });

@@ -1,4 +1,4 @@
-const {createMiddleware} = require('langchain');
+const { createMiddleware } = require('langchain');
 
 
 // Thoughts captured during a run, keyed by chat session.
@@ -42,9 +42,7 @@ const thoughtMiddleware = createMiddleware({
       const justification = await model.invoke([
         ['system', 'You explain AI agent decisions in one short sentence.'],
         ['human', `The user asked: "${lastHuman?.content}". The agent decided to call: ${toolCallText}. In one short sentence, explain why.`]
-      ], {
-        tags:['justification']
-      });
+      ], { tags: ['justification'] });  // add: lets a streaming caller skip these tokens
       const text = typeof justification.content === 'string' ? justification.content : '';
       console.log("Custom created justification =", text);
       if (text) thoughts = [text];
@@ -71,5 +69,5 @@ function peekThoughts(sessionId) {
 }
 
 module.exports = {
-    thoughtMiddleware, takeThoughts, peekThoughts,
+  thoughtMiddleware, takeThoughts, peekThoughts,
 }
