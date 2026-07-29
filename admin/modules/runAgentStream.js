@@ -31,7 +31,7 @@ async function runAgentStreamFinal(input, config, thinking = false, onEvent) {
       // stream any new reasoning as soon as the middleware has captured it
       const capturedThoughts = peekThoughts(sessionId);
       for (; streamedThoughts < capturedThoughts.length; streamedThoughts++) {
-        onEvent('chunk', { text: `\n\n💭 *${capturedThoughts[streamedThoughts]}*` });
+        onEvent('chunk', { text: `\n\n💭 ${capturedThoughts[streamedThoughts]}` });
       }
 
       for (const update of Object.values(step)) {
@@ -115,18 +115,26 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
   let replyStreamed = false;
   let todos = null;
   let planStreamed = false;
+  let streamedThoughts = 0;
+
 
   const chunk = (text) => onEvent('chunk', { text });
+  
 
   // ---------- one function per stream event type ----------
 
   // a token from the model
   function processTokens(data) {
     const c = data.chunk;
+    // if there's no content, return
     if (!c || !c.content) return;
-    if (typeof c.content !== 'string') return;          // arrays hold thoughts or tool calls - Stage 4
-    if ((c.tool_call_chunks || []).length > 0) return;  // a tool-call turn, not reply text
-    chunk(c.content);
+    // if content is not a string, return immedialtey, as arrays hold thoughts or tool calls
+    if (typeof c.content !== 'string') return;          
+    // if there are tool call chunks, return (a tool-call turn, not reply text)
+    if ((c.tool_call_chunks || []).length > 0) return;  
+
+    const prefix = (replyStreamed === false) ? '\n\n---\n\n' : '';
+    chunk(prefix + c.content);
     replyStreamed = true;
   }
 
@@ -149,20 +157,20 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
   }
 
   function processPlan(data) {
-    const c = data.chunk;
-    if (!c) return;
-    for (const update of Object.values(c)) {
-      if (update && update.todos) {
-        todos = update.todos;
-        // stream the plan once; later write_todos calls only update
-        // statuses, and re-streaming each time would flood the preview
-        if (!planStreamed) {
-          planStreamed = true;
-          const planText = extractPlan(update.todos);
-          if (planText) chunk('\n\n' + planText);
-        }
-      }
-    }
+    // const c = data.chunk;
+    // if (!c) return;
+    // for (const update of Object.values(c)) {
+    //   if (update && update.todos) {
+    //     todos = update.todos;
+    //     // stream the plan once; later write_todos calls only update
+    //     // statuses, and re-streaming each time would flood the preview
+    //     if (!planStreamed) {
+    //       planStreamed = true;
+    //       const planText = extractPlan(update.todos);
+    //       if (planText) chunk('\n\n' + planText);
+    //     }
+    //   }
+    // }
   }
 
   // ---------- the dispatch ----------
@@ -183,6 +191,13 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
   async function processStream(stream) {
     for await (const event of stream) {
       processEvent(event);
+
+      // stream any new reasoning as soon as the middleware has captured it
+      // const capturedThoughts = peekThoughts(sessionId);
+      // for (; streamedThoughts < capturedThoughts.length; streamedThoughts++) {
+      //   const prefix = (streamedThoughts === 0) ? '\n\n---\n\n💭 **Reasoning:**\n' : '\n';
+      //   chunk(`${prefix} - ${capturedThoughts[streamedThoughts]}`);
+      // }
     }
   }
 
@@ -210,6 +225,7 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
 
   const chart = takeChartConfig(sessionId);
   const plan = todos ? extractPlan(todos) : null;
+  takeThoughts(sessionId); // drain store but don't include in reply
 
   await history.addUserMessage(input.input);
   await history.addAIChatMessage(reply || '(no reply)', chart);
