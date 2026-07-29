@@ -90,169 +90,131 @@ async function runAgentStreamFinal(input, config, thinking = false, onEvent) {
   return { reply, chart, plan, thoughts };
 }
 
+
+// Like extractText, but skips thought blocks: the reply should be the
+// human-readable answer only
+function extractReplyText(content) {
+  if (Array.isArray(content)) {
+    return content
+      .map(part => (typeof part === 'string' ? part : (part && part.thought === true ? '' : part.text || '')))
+      .join('');
+  }
+  return content ? content.toString() : '';
+}
+
 async function runAgentStream(input, config, thinking = false, onEvent) {
-  // setup
   const { sessionId } = config.configurable;
   const history = new MariaDBChatHistory(sessionId);
   const pastMessages = await history.getMessages();
 
   const activeAgent = thinking ? thinkingAgent : agent;
+  const runConfig = { ...config, recursionLimit: 50, version: 'v2' };
 
-  const stream = activeAgent.streamEvents(
-    { messages: [...pastMessages, new HumanMessage(input.input)] },
-    { ...config, recursionLimit: 50, version: 'v2' }
-  );
 
-  let lastAgentContent = null;
+  let reply = '';
+  let replyStreamed = false;
   let todos = null;
-  let streamedThoughts = 0;
   let planStreamed = false;
 
-  // start streaming
-  const processStream = async (stream) => {
-    try {
-      for await (const event of stream) {
-        processEvent(event);
-      }
-    } catch (error) {
-      console.log("Error:", error);
-      throw error;
+  const chunk = (text) => onEvent('chunk', { text });
+
+  // ---------- one function per stream event type ----------
+
+  // a token from the model
+  function processTokens(data) {
+    const c = data.chunk;
+    if (!c || !c.content) return;
+    if (typeof c.content !== 'string') return;          // arrays hold thoughts or tool calls - Stage 4
+    if ((c.tool_call_chunks || []).length > 0) return;  // a tool-call turn, not reply text
+    chunk(c.content);
+    replyStreamed = true;
+  }
+
+  // a model turn completed; its aggregated message is authoritative
+  function processChatModelEnd(data) {
+    const output = data.output;
+    if (output && (!output.tool_calls || output.tool_calls.length === 0)) {
+      // a turn with no tool calls ends the agent loop, so this is the reply
+      reply = extractReplyText(output.content);
     }
   }
 
-  const processEvent = (event) => {
-    const { event: eventType, data, name } = event;
-
-    processThoughts();
-
-    if (eventType === 'on_chat_model_start') {
-      processChatModelStart();
-    }
-    else if (eventType === 'on_chat_model_stream') {
-      processTokens(data);
-    } 
-    else if (eventType === 'on_chain_stream') {
-      if (data.chunk) {
-        if (data.chunk.todos) processPlan(data.chunk.todos);
-        if (data.chunk.messages) processStateMessages(data.chunk.messages);
-      }
-    }
-    else if (eventType === 'on_chat_model_end') {
-      processChatModelEnd(data);
-    }
-    else if (eventType === 'on_tool_start') {
-      processToolStart(name);
-    }
-    else if (eventType === 'on_tool_end') {
-      processToolEnd(name);
-    }
+  function processToolStart(data, event) {
+    if (event.name === 'write_todos') return;  // the plan chunk follows from the state update
+    chunk(`\n\n🔧 *Calling \`${event.name}\`...*`);
   }
 
-  const processThoughts = () => {
-    const capturedThoughts = peekThoughts(sessionId);
-    for (; streamedThoughts < capturedThoughts.length; streamedThoughts++) {
-      onEvent('chunk', { text: `\n\n💭 *${capturedThoughts[streamedThoughts]}*` });
-    }
+  function processToolEnd(data, event) {
+    if (event.name !== 'write_todos') chunk(' ✔️');
   }
 
-  const processChatModelStart = () => {
-    // Reset the accumulator for the new turn.
-    // Like runAgentStreamFinal, we only want the content of the turn 
-    // that eventually becomes the final human-readable reply.
-    lastAgentContent = '';
-  }
-
-  const processTokens = (data) => {
-    const chunk = data.chunk;
-    // Gemini includeThoughts: true sends thoughts as content parts in the stream.
-    if (chunk.content) {
-      const hasToolCalls = chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0;
-      let text = '';
-      
-      if (typeof chunk.content === 'string') {
-        if (!hasToolCalls) text = chunk.content;
-      } else if (Array.isArray(chunk.content)) {
-        for (const part of chunk.content) {
-          if (part.thought === true) {
-            if (part.text) onEvent('chunk', { text: `\n\n💭 *${part.text}*` });
-          } else if (!hasToolCalls) {
-            text += (part.text || '');
-          }
+  function processPlan(data) {
+    const c = data.chunk;
+    if (!c) return;
+    for (const update of Object.values(c)) {
+      if (update && update.todos) {
+        todos = update.todos;
+        // stream the plan once; later write_todos calls only update
+        // statuses, and re-streaming each time would flood the preview
+        if (!planStreamed) {
+          planStreamed = true;
+          const planText = extractPlan(update.todos);
+          if (planText) chunk('\n\n' + planText);
         }
       }
-      
-      if (text) {
-        onEvent('chunk', { text });
-        if (typeof lastAgentContent !== 'string') lastAgentContent = '';
-        lastAgentContent += text;
-      }
     }
   }
 
-  const processPlan = (newTodos) => {
-    todos = newTodos;
-    if (!planStreamed) {
-      planStreamed = true;
-      const planText = extractPlan(todos);
-      if (planText) onEvent('chunk', { text: '\n\n' + planText });
+  // ---------- the dispatch ----------
+
+  const handlers = {
+    on_chat_model_stream: processTokens,
+    on_chat_model_end: processChatModelEnd,
+    on_tool_start: processToolStart,
+    on_tool_end: processToolEnd,
+    on_chain_stream: processPlan
+  };
+
+  function processEvent(event) {
+    const handler = handlers[event.event];
+    if (handler) handler(event.data, event);
+  }
+
+  async function processStream(stream) {
+    for await (const event of stream) {
+      processEvent(event);
     }
   }
 
-  const processStateMessages = (messages) => {
-    // Find the last AI message that doesn't have tool calls. 
-    // This is the most likely candidate for the final human response.
-    const lastAiMsg = [...messages].reverse().find(m => 
-      m._getType() === 'ai' && (!m.tool_calls || m.tool_calls.length === 0)
-    );
+  // ---------- run ----------
 
-    if (lastAiMsg) {
-      const content = extractText(lastAiMsg.content);
-      // If our token accumulator is significantly shorter than the state's content,
-      // it means we missed some tokens during the stream.
-      if (!lastAgentContent || content.length > lastAgentContent.length) {
-        lastAgentContent = content;
-      }
+  // note: no await - streamEvents returns the stream directly
+  const stream = activeAgent.streamEvents(
+    { messages: [...pastMessages, new HumanMessage(input.input)] },
+    runConfig
+  );
+
+  try {
+    await processStream(stream);
+  } catch (error) {
+    if (isRecursionLimitError(error)) {
+      // same policy as runAgent: apologise in character and save the exchange
+      console.error('Agent hit the recursion limit for input:', input.input);
+      const apology = 'I was not able to finish that request — it needed more steps than I am allowed to take. Could you break it into smaller requests?';
+      await history.addUserMessage(input.input);
+      await history.addAIChatMessage(apology);
+      return { reply: apology, chart: null, replyStreamed: false };
     }
+    throw error;  // unexpected error — let the route send an `error` event
   }
 
-  const processChatModelEnd = (data) => {
-    // This fires when a model turn completes. 
-    // If the turn had no tool calls, it's a 'human' response part.
-    const output = data.output;
-    if (output && output.tool_calls?.length === 0) {
-      const text = extractText(output.content);
-      // We've already been accumulating tokens in processTokens, 
-      // so we don't need to do anything here unless we want to 
-      // 'correct' the accumulation with the final clean text.
-      // But we must be careful not to overwrite the WHOLE conversation 
-      // if this was just one turn of many.
-    }
-  }
-
-  const processToolStart = (name) => {
-    if (name !== 'write_todos') {
-      onEvent('chunk', { text: `\n\n🔧 *Calling \`${name}\`...*` });
-    }
-  }
-
-  const processToolEnd = (name) => {
-    if (name !== 'write_todos') {
-      onEvent('chunk', { text: ` (${name}) ✔️` });
-    }
-  }
-
-  // begin processStream();
-  await processStream(stream);
-
-  const reply = extractText(lastAgentContent) || '(no reply)';
-  const plan = extractPlan(todos);
   const chart = takeChartConfig(sessionId);
-  const thoughts = takeThoughts(sessionId);
+  const plan = todos ? extractPlan(todos) : null;
 
   await history.addUserMessage(input.input);
-  await history.addAIChatMessage(reply, chart);
+  await history.addAIChatMessage(reply || '(no reply)', chart);
 
-  return { reply, chart, plan, thoughts };
+  return { reply: reply || '(no reply)', chart, plan, replyStreamed };
 }
 
 module.exports = { runAgentStream };

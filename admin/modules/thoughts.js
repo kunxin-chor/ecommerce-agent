@@ -42,7 +42,9 @@ const thoughtMiddleware = createMiddleware({
       const justification = await model.invoke([
         ['system', 'You explain AI agent decisions in one short sentence.'],
         ['human', `The user asked: "${lastHuman?.content}". The agent decided to call: ${toolCallText}. In one short sentence, explain why.`]
-      ]);
+      ], {
+        tags:['justification']
+      });
       const text = typeof justification.content === 'string' ? justification.content : '';
       console.log("Custom created justification =", text);
       if (text) thoughts = [text];
