@@ -54,17 +54,19 @@ const modelWithTools = new ChatGoogle({
   apiKey: process.env.GEMINI_API_KEY,
 }).bindTools(tools);
 
-const agent = createAgent({
-  model,
-  tools,
-  prompt: `You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. 
+const prompt = `You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. 
   When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs, image links, or raw chart configuration JSON in your text response. 
   The chart will be rendered automatically by the frontend. 
   Do not describe the chart config JSON in your reply.
   For any request that involves two or more distinct actions, you MUST call write_todos to create a plan before calling any other tool — even if you already know what you will do.
   If the admin rejects a plan or action without giving specific feedback, ask the admin politely what changes they would like to make or how they would prefer you to proceed. Do NOT execute any tools until they clarify.
   If the admin provides specific feedback when rejecting, create a revised plan using write_todos that incorporates their feedback.
-  `,
+  `;
+
+const agent = createAgent({
+  model,
+  tools,
+  prompt: prompt,
   middleware: [todoListMiddleware(), approvalMiddleware],
   checkpointer
 });
@@ -72,14 +74,7 @@ const agent = createAgent({
 const thinkingAgent = createAgent({
   model,
   tools,
-  prompt: `You are a helpful admin assistant for an ecommerce store. Format your responses using markdown. 
-  When you generate a chart using the generate_apex_chart tool, do NOT include any chart URLs, image links, or raw chart configuration JSON in your text response. 
-  The chart will be rendered automatically by the frontend. 
-  Do not describe the chart config JSON in your reply.
-  For any request that involves two or more distinct actions, you MUST call write_todos to create a plan before calling any other tool — even if you already know what you will do.
-  If the admin rejects a plan or action without giving specific feedback, ask the admin politely what changes they would like to make or how they would prefer you to proceed. Do NOT execute any tools until they clarify.
-  If the admin provides specific feedback when rejecting, create a revised plan using write_todos that incorporates their feedback.
-  `,
+  prompt: prompt,
   middleware: [todoListMiddleware(), approvalMiddleware, thoughtMiddleware],
   checkpointer
 });
