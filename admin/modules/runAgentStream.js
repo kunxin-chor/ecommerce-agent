@@ -157,20 +157,20 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
   }
 
   function processPlan(data) {
-    // const c = data.chunk;
-    // if (!c) return;
-    // for (const update of Object.values(c)) {
-    //   if (update && update.todos) {
-    //     todos = update.todos;
-    //     // stream the plan once; later write_todos calls only update
-    //     // statuses, and re-streaming each time would flood the preview
-    //     if (!planStreamed) {
-    //       planStreamed = true;
-    //       const planText = extractPlan(update.todos);
-    //       if (planText) chunk('\n\n' + planText);
-    //     }
-    //   }
-    // }
+    const c = data.chunk;
+    if (!c) return;
+    for (const update of Object.values(c)) {
+      if (update && update.todos) {
+        todos = update.todos;
+        // stream the plan once; later write_todos calls only update
+        // statuses, and re-streaming each time would flood the preview
+        if (!planStreamed) {
+          planStreamed = true;
+          const planText = extractPlan(update.todos);
+          if (planText) chunk('\n\n' + planText);
+        }
+      }
+    }
   }
 
   // ---------- the dispatch ----------
@@ -193,11 +193,11 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
       processEvent(event);
 
       // stream any new reasoning as soon as the middleware has captured it
-      // const capturedThoughts = peekThoughts(sessionId);
-      // for (; streamedThoughts < capturedThoughts.length; streamedThoughts++) {
-      //   const prefix = (streamedThoughts === 0) ? '\n\n---\n\n💭 **Reasoning:**\n' : '\n';
-      //   chunk(`${prefix} - ${capturedThoughts[streamedThoughts]}`);
-      // }
+      const capturedThoughts = peekThoughts(sessionId);
+      for (; streamedThoughts < capturedThoughts.length; streamedThoughts++) {
+        const prefix = (streamedThoughts === 0) ? '\n\n---\n\n💭 **Reasoning:**\n' : '\n';
+        chunk(`${prefix} - ${capturedThoughts[streamedThoughts]}`);
+      }
     }
   }
 
