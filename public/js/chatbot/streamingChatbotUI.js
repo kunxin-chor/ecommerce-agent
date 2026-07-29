@@ -84,7 +84,11 @@
         chatInstance.messageAppendContent(replyId, data.text);
       } else if (event === 'done') {
         // the authoritative payload — rebuild the bubble in its final layout
-        chatInstance.messageReplaceContent(replyId, this.replyBuilder.renderText(data));
+        // the streamed preview (reasoning, plan, progress, reply tokens)
+        // stays as-is — we only top up the reply if no tokens arrived
+        if (!data.replyStreamed && data.reply) {
+          chatInstance.messageAppendContent(replyId, data.reply);
+        }
         if (this.replyBuilder.hasChart(data)) {
           const msgNode = chatInstance.messageGetDOMObject(replyId);
           this.chartRenderer.render(msgNode, data.chart);
