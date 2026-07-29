@@ -114,6 +114,7 @@ async function executeAgentStream({ activeAgent, streamInput, runConfig, session
     throw error;
   }
 
+  // check if there are any interruption to handle
   const threadId = runConfig.configurable.thread_id;
   const state = await activeAgent.getState({ configurable: { thread_id: threadId } });
   const interrupts = (state.tasks || []).flatMap(task => task.interrupts || []);
