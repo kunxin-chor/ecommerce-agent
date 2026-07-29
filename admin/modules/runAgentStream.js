@@ -102,7 +102,7 @@ function extractReplyText(content) {
   return content ? content.toString() : '';
 }
 
-// Core streaming loop shared by runAgentStream and resumeAgentStream
+// Core streaming loop shared by runAgentStream
 async function executeAgentStream({ activeAgent, streamInput, runConfig, sessionId, userInput, thinking, history }, onEvent) {
   let reply = '';
   let replyStreamed = false;
