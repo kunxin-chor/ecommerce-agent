@@ -1,10 +1,13 @@
 // admin/modules/runAgentStream.js
 const { HumanMessage } = require('@langchain/core/messages');
+const { Command } = require('@langchain/langgraph');
+const { randomUUID } = require('crypto');
 const { agent, thinkingAgent } = require('../../gemini');
 const { MariaDBChatHistory } = require('./MariaDBHistory');
 const { extractText, extractPlan, isRecursionLimitError } = require('./agentHelpers');
 const { takeChartConfig } = require('../tools/chartTools');
 const { takeThoughts, peekThoughts } = require('./thoughts');
+const { setPendingApproval, takePendingApproval, approvalReply } = require('./approval');
 
 // Runs the agent like runAgent, but instead of waiting for the whole run to
 // finish, it calls onEvent(eventName, data) as the agent works. The route
@@ -102,54 +105,37 @@ function extractReplyText(content) {
   return content ? content.toString() : '';
 }
 
-async function runAgentStream(input, config, thinking = false, onEvent) {
-  const { sessionId } = config.configurable;
-  const history = new MariaDBChatHistory(sessionId);
-  const pastMessages = await history.getMessages();
-
-  const activeAgent = thinking ? thinkingAgent : agent;
-  const runConfig = { ...config, recursionLimit: 50, version: 'v2' };
-
-
+// Core streaming loop shared by runAgentStream and resumeAgentStream
+async function executeAgentStream({ activeAgent, streamInput, runConfig, sessionId, userInput, thinking, history }, onEvent) {
   let reply = '';
   let replyStreamed = false;
   let todos = null;
   let planStreamed = false;
   let streamedThoughts = 0;
 
-
   const chunk = (text) => onEvent('chunk', { text });
-  
 
-  // ---------- one function per stream event type ----------
-
-  // a token from the model
   function processTokens(data, event) {
     const c = data.chunk;
-    // if there's no content, return
     if (!c || !c.content) return;
-    // if content is not a string, return immedialtey, as arrays hold thoughts or tool calls
-    if (typeof c.content !== 'string') return;          
-    // if there are tool call chunks, return (a tool-call turn, not reply text)
-    if ((c.tool_call_chunks || []).length > 0) return;  
-      if ((event.tags || []).includes('justification')) return;
+    if (typeof c.content !== 'string') return;
+    if ((c.tool_call_chunks || []).length > 0) return;
+    if ((event.tags || []).includes('justification')) return;
 
     const prefix = (replyStreamed === false) ? '\n\n---\n\n' : '';
     chunk(prefix + c.content);
     replyStreamed = true;
   }
 
-  // a model turn completed; its aggregated message is authoritative
   function processChatModelEnd(data) {
     const output = data.output;
     if (output && (!output.tool_calls || output.tool_calls.length === 0)) {
-      // a turn with no tool calls ends the agent loop, so this is the reply
       reply = extractReplyText(output.content);
     }
   }
 
   function processToolStart(data, event) {
-    if (event.name === 'write_todos') return;  // the plan chunk follows from the state update
+    if (event.name === 'write_todos') return;
     chunk(`\n\n🔧 *Calling \`${event.name}\`...*`);
   }
 
@@ -163,8 +149,6 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
     for (const update of Object.values(c)) {
       if (update && update.todos) {
         todos = update.todos;
-        // stream the plan once; later write_todos calls only update
-        // statuses, and re-streaming each time would flood the preview
         if (!planStreamed) {
           planStreamed = true;
           const planText = extractPlan(update.todos);
@@ -173,8 +157,6 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
       }
     }
   }
-
-  // ---------- the dispatch ----------
 
   const handlers = {
     on_chat_model_stream: processTokens,
@@ -193,7 +175,6 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
     for await (const event of stream) {
       processEvent(event);
 
-      // stream any new reasoning as soon as the middleware has captured it
       const capturedThoughts = peekThoughts(sessionId);
       for (; streamedThoughts < capturedThoughts.length; streamedThoughts++) {
         const prefix = (streamedThoughts === 0) ? '\n\n---\n\n💭 **Reasoning:**\n' : '\n';
@@ -202,36 +183,94 @@ async function runAgentStream(input, config, thinking = false, onEvent) {
     }
   }
 
-  // ---------- run ----------
-
-  // note: no await - streamEvents returns the stream directly
-  const stream = activeAgent.streamEvents(
-    { messages: [...pastMessages, new HumanMessage(input.input)] },
-    runConfig
-  );
+  const stream = activeAgent.streamEvents(streamInput, runConfig);
 
   try {
     await processStream(stream);
   } catch (error) {
     if (isRecursionLimitError(error)) {
-      // same policy as runAgent: apologise in character and save the exchange
-      console.error('Agent hit the recursion limit for input:', input.input);
+      console.error('Agent hit the recursion limit for input:', userInput);
       const apology = 'I was not able to finish that request — it needed more steps than I am allowed to take. Could you break it into smaller requests?';
-      await history.addUserMessage(input.input);
+      await history.addUserMessage(userInput);
       await history.addAIChatMessage(apology);
       return { reply: apology, chart: null, replyStreamed: false };
     }
-    throw error;  // unexpected error — let the route send an `error` event
+    throw error;
+  }
+
+  const threadId = runConfig.configurable.thread_id;
+  const state = await activeAgent.getState({ configurable: { thread_id: threadId } });
+  const interrupts = (state.tasks || []).flatMap(task => task.interrupts || []);
+  if (interrupts.length > 0) {
+    setPendingApproval(sessionId, { threadId, thinking, input: userInput });
+    return { reply: approvalReply(interrupts[0].value), chart: null, plan: null, replyStreamed: false };
   }
 
   const chart = takeChartConfig(sessionId);
   const plan = todos ? extractPlan(todos) : null;
-  takeThoughts(sessionId); // drain store but don't include in reply
+  takeThoughts(sessionId);
 
-  await history.addUserMessage(input.input);
+  await history.addUserMessage(userInput);
   await history.addAIChatMessage(reply || '(no reply)', chart);
 
   return { reply: reply || '(no reply)', chart, plan, replyStreamed };
 }
 
-module.exports = { runAgentStream };
+async function runAgentStream(input, config, thinking = false, onEvent) {
+  const { sessionId } = config.configurable;
+  const history = new MariaDBChatHistory(sessionId);
+  const pastMessages = await history.getMessages();
+
+  const activeAgent = thinking ? thinkingAgent : agent;
+  const threadId = config.configurable?.thread_id || randomUUID();
+  const runConfig = {
+    ...config,
+    configurable: { ...config.configurable, thread_id: threadId },
+    recursionLimit: 50,
+    version: 'v2'
+  };
+
+  const streamInput = { messages: [...pastMessages, new HumanMessage(input.input)] };
+
+  return executeAgentStream({
+    activeAgent,
+    streamInput,
+    runConfig,
+    sessionId,
+    userInput: input.input,
+    thinking,
+    history
+  }, onEvent);
+}
+
+async function resumeAgentStream(sessionId, decisions, onEvent) {
+  const pending = takePendingApproval(sessionId);
+  if (!pending) {
+    return { reply: 'Nothing is waiting for approval.', chart: null, plan: null, replyStreamed: false };
+  }
+
+  const { threadId, thinking, input: userInput } = pending;
+  const history = new MariaDBChatHistory(sessionId);
+  const activeAgent = thinking ? thinkingAgent : agent;
+  const runConfig = {
+    configurable: { sessionId, thread_id: threadId },
+    recursionLimit: 50,
+    version: 'v2'
+  };
+
+  const streamInput = new Command({
+    resume: { decisions: Array.isArray(decisions) ? decisions : [decisions] }
+  });
+
+  return executeAgentStream({
+    activeAgent,
+    streamInput,
+    runConfig,
+    sessionId,
+    userInput,
+    thinking,
+    history
+  }, onEvent);
+}
+
+module.exports = { runAgentStream, resumeAgentStream };

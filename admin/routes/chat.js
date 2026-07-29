@@ -5,7 +5,7 @@ const router = express.Router();
 const ensureAdmin = require('../middlewares/ensureAdmin');
 const { MariaDBChatHistory } = require('../modules/MariaDBHistory');
 const { runAgent } = require('../modules/runAgent');
-const { runAgentStream } = require('../modules/runAgentStream');
+const { runAgentStream, resumeAgentStream } = require('../modules/runAgentStream');
 const { hasPendingApproval, parseDecision } = require('../modules/approval');
 const { resumeAgent } = require('../modules/runAgent');
 
@@ -113,17 +113,40 @@ router.post('/api/stream', ensureAdmin, express.json(), async (req, res) => {
   if (!text) return res.json({ reply: 'Please type something.' });
   if (!sessionId) return res.status(400).json({ reply: 'No session selected.' });
 
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // Check if there is anything to resume
+  if (hasPendingApproval(sessionId)) {
+    const decisions = parseDecision(text);
+    if (!decisions) {
+      return res.json({ reply: 'Please reply *yes* to approve or *no* to reject.' });
+    }
+    
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    try {
+      const result = await resumeAgentStream(sessionId, decisions, sendEvent);
+      sendEvent('done', result);
+    } catch (error) {
+      console.error('Chat stream error on resume:', error);
+      sendEvent('error', { reply: 'Sorry, something went wrong.' });
+    } finally {
+      res.end();
+    }
+    return;
+  }
+
   // From this point on, the response is an event stream
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
-
-  // One SSE frame: an event line, a data line, and a blank line to end it
-  const sendEvent = (event, data) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
 
   try {
     const result = await runAgentStream(

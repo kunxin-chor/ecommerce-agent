@@ -29,8 +29,6 @@
   </div>
 </div>
 
-
-
 <%- contentFor('scripts') %>
 <script id="initialHistory" type="application/json"><%- JSON.stringify(history) %></script>
 <script id="activeSessionId" type="application/json"><%- JSON.stringify(typeof activeSessionId !== 'undefined' ? activeSessionId : null) %></script>
@@ -40,5 +38,5 @@
 <script src="/js/chatbot/apexChartRenderer.js"></script>
 <script src="/js/chatbot/chatbotReplyBuilder.js"></script>
 <script src="/js/chatbot/adminChatbotUI.js"></script>
-<!-- <script src="/js/chatbot/streamingChatbotUI.js"></script> -->
+<script src="/js/chatbot/streamingChatbotUI.js"></script>
 <script src="/js/chatbot/adminChatBotClass.js"></script>
